@@ -1,5 +1,3 @@
-<!-- git commit -m "The bolerplate of the project was created. The CMD app with basic commands was implemented for the client." -->
-
 # <p style = "color: purple; font-size: 40px;">OS Project</p>
 ## Client-Server application
 ### Was created by Umidjon Khabibullaev in a collaboration with professor Jaloliddin Yusupov.
