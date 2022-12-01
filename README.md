@@ -1,6 +1,6 @@
 # <p style = "color: purple; font-size: 40px;">OS Project</p>
 ## Client-Server application
-### Was created by Umidjon Khabibullaev in a collaboration with professor Jaloliddin Yusupov.
+### Was created by Umidjon Khabibullaev in a collaboration with professor Jaloliddin Yusupov and Fulvio Risso.
 
 <br>
 <br>
@@ -8,14 +8,17 @@
 <hr><br>
 
 <p style = "color: darkblue; font-size: 30px; font-weight: bold;">Client:</p>
-All the logic of client is in package `client` of the root project folder. The main logic is written in client.py file.
+All the logic of client is in package `client` of the root project folder. The main logic is written in <i>client.py</i> file.
 
-<p>Client app requires to select a mode. For now only the `CMD` mode is implemented. Once the mode is selected, the client calls its corresponding subapplication which is defined as a package inside the `client` package.</p>
+<p>
+    The client app always requires to type a command. Available commands of the client are:
+    <ul>
+        <li><i>connect</i> USERNAME SERVER_IP_ADDRESS</li>
+        <li><i>disconnect</i></li>
+        <li><i>lu</i></li>
+        <li><i>send</i> USER "message"</li>
+        <li><i>lf</i></li>
+    </ul>
+</p>
 
-### <u>CMD Mode</u>
-The CMD mode is an application which accepts the cmd commands of a chosen OS and serves these commands.
 
-Example of usage:
-<div>
-    <img src = "./client/cmd/doc_screens/usage_screen.png">
-</div>
