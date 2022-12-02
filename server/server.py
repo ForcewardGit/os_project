@@ -6,7 +6,8 @@ import logging
 
 
 # Format log messages #
-logging.basicConfig(level=logging.INFO)
+log_format = "%(levelname)s: %(message)s"
+logging.basicConfig(level=logging.INFO, format=log_format)
 
 # Global Variables #
 SELF_IP = "127.0.0.1"
@@ -44,21 +45,25 @@ class Server:
             methods
         """
         while True:
-            message = conn.recv(BUF_SIZE).decode().split()
-            command = message[0]
-            params = message[1:] if len(message)>1 else []
-            params.extend([conn, addr])
-            match command:
-                case "connect":
-                    self.accept_connection(*params)
-                    logging.info(f"{params[0]} successfully connected")
-                case "disconnect":
-                    self.accept_disconnection(*params)
-                    break
-                case "lu":
-                    self.list_users(*params)
-                case "lf":
-                    self.list_files(*params)
+            try:
+                message = conn.recv(BUF_SIZE).decode().split()
+                command = message[0]
+                params = message[1:] if len(message)>1 else []
+                params.extend([conn, addr])
+                match command:
+                    case "connect":
+                        self.accept_connection(*params)
+                        logging.info(f"{params[0]} successfully connected")
+                    case "disconnect":
+                        self.accept_disconnection(*params)
+                        break
+                    case "lu":
+                        self.list_users(*params)
+                    case "lf":
+                        self.list_files(*params)
+            except Exception as exc:
+                logging.error(f"{exc}")
+                break
     
     def accept_connection(self, username: str, self_ip: str, conn: socket, \
         addr: tuple):
@@ -115,7 +120,7 @@ class Server:
         import os
 
         if conn in self.active_connections:
-            directory_items = os.listdir()
+            directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
             directory_items = [item for item in directory_items if not item.startswith("__")]
             message = " ".join(directory_items)
         else:
@@ -132,6 +137,6 @@ class Server:
                 conn, addr = self.socket.accept()
                 self.communicate_with_client(conn, addr)
         except Exception as exc:
-            logging.error(f"{exc} hereeeee")
+            logging.error(f"{exc}")
         finally:
             self.socket.close()

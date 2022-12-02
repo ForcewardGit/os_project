@@ -1,29 +1,35 @@
 """ Module that defines all the logic of the client.
 """
 
-from cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd
+from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd
 import logging
 
 
 # Format log messages #
-logging.basicConfig(level=logging.INFO)
+log_format = "%(levelname)s: %(message)s"
+logging.basicConfig(level=logging.INFO, format=log_format)
 
 # Global Variables #
 SERVER_IP = "localhost"
 PORT = 2021
 BUF_SIZE = 100
-available_commands_apps = ["connect", "disconnect", "lu", "lf"]  # list of available commands that can be handled by client
+available_commands = ["connect", "disconnect", "lu", "lf"]
 
 
 class Client:
     """ Client class which implements the logic of client objects.
     """
     def __init__(self) -> None:
-        """ Initialization of client object
+        """ Initialization of client object.
         """
         self.username = None    # the username of client
         self.connected = False  # True when the client is connected to server
         self.socket = None      # socket object to communicate with server
+    
+    def check_server(self):
+        """ Checks whether a server is alive.
+        """
+        pass
     
     def ask_command(self):
         """ Method which is runned automatically when the client object is 
@@ -32,6 +38,7 @@ class Client:
         """
         while True:
             try:
+                self.check_server()
                 user_input = input("Enter a command: ")
                 user_input = user_input.split()
                 command = user_input[0].lower()
@@ -41,22 +48,25 @@ class Client:
                         self.connect(*params)
                     case "disconnect":
                         self.disconnect(*params)
+                        continue
                     case "lu":
                         self.lu(*params)
-                    case "send":
-                        self.send(*params)
                     case "lf":
                         self.lf(*params)
+                    # case "send":
                     case "quit":
                         # Disconnect from server and finish the client program
                         self.disconnect(*params)
                         break
                     case _:
-                        logging.warning(f"Command {command} not found")
-            except Exception as exc:
-                logging.error(f"{exc} ask_command")
-                continue
-    
+                        logging.warning(f"Command '{command}' not found")
+            except IndexError:
+                logging.warning("Type a valid input")
+            except TypeError as exc:
+                logging.error(exc)
+            except ConnectionResetError as exc:
+                logging.error(exc.strerror)
+                 
     def connect(self, username: str, ip: str):
         """ Connect to the server with given `ip` and `port`.
         """
@@ -64,7 +74,7 @@ class Client:
         port = PORT
 
         if not self.connected:
-            self.socket = connect_cmd(port, ip)
+            self.socket = connect_cmd(ip, port)
             if self.socket:
                 self.socket.send(f"connect {username} {ip}".encode())
                 message = self.socket.recv(BUF_SIZE).decode()
@@ -97,12 +107,11 @@ class Client:
             to which our client is also connected
         """
         if self.connected:
-            try:
-                lu_cmd(self.socket)
+            if lu_cmd(self.socket):
                 server_response = self.socket.recv(BUF_SIZE).decode()
                 logging.info(server_response)
-            except Exception as exc:
-                logging.error(exc)
+            else: 
+                self.connected = False
         else:
             logging.warning("There was no connection")
 
@@ -116,8 +125,10 @@ class Client:
         """ List all the files of our server's folder.
         """
         if self.connected:
-            lf_cmd(self.socket)
-            server_response = self.socket.recv(BUF_SIZE).decode()
-            logging.info(server_response)
+            if lf_cmd(self.socket):
+                server_response = self.socket.recv(BUF_SIZE).decode()
+                logging.info(server_response)
+            else:
+                self.connected = False
         else:
             logging.warning("There was no connection")
