@@ -3,42 +3,69 @@
 
 from socket import socket, AF_INET, SOCK_STREAM
 import logging
+from threading import Thread, Lock
 
 
 # Format log messages #
 log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(level=logging.INFO, format=log_format)
+logging.basicConfig(level=logging.DEBUG, format=log_format)
 
 # Global Variables #
-SELF_IP = "127.0.0.1"
-SELF_PORT = 2021
-BUF_SIZE = 1024
+SELF_IP = "127.0.0.1"   # IP address of server
+PORT1 = 2021            # Port at which server waits clients and interacts with them
+PORT2 = 2022            # Port to which server sends messages whenever accepts them in `send` command
+BUF_SIZE = 1024         # Buffer size of receiving items
 
 
 class Server:
     """ The Server class which implements the logic of Server which can serve
-        only 1 client at a time.
+        only 1 client at a time
     """
-    def __init__(self, ip=SELF_IP, port=SELF_PORT):
-        self.ip = ip                            # IP address of server
-        self.port = port                        # Port, at which server will wait
-        self.socket = self.configure_socket()   # Socket object
-        self.clients = {}                       # Dictionary which contains username: his connection info key-value pairs
-        self.active_connections = []            # List of client connections who are currently connected to this server
+    def __init__(self, ip=SELF_IP, port1=PORT1, port2=PORT2):
+        self.ip = ip
+        self.port1 = port1
+        self.port2 = port2
+        self.clients_port1 = {}       # Dictionary which contains username: his connection info key-value pairs for port 1
+        self.clients_port2 = {}       # Dictionary which contains username: his connection info key-value pairs for port 2
+        self.active_connections = []  # List of client connections who are currently connected to this server
+        self.com_socket, self.redirect_socket = self.configure_sockets()
+        self.lock = Lock()
 
-    def configure_socket(self):
-        """ Create and return socket object. If some error occurred, this 
-            method returns None
+    def configure_sockets(self):
+        """ Create and return socket objects. If some error occurred, the method
+            returns None. In returned tuple, the first socket is the socket that
+            listens in port 1, the second is the one listening in port 2
         """
         try:
-            s = socket(AF_INET, SOCK_STREAM)
-            s.bind((self.ip, self.port))
-            s.listen()
-            return s
+            s1 = socket(AF_INET, SOCK_STREAM)
+            s2 = socket(AF_INET, SOCK_STREAM)
+            s1.bind((self.ip, self.port1))
+            s2.bind((self.ip, self.port2))
+            s1.listen()
+            s2.listen()
+            return s1, s2
         except Exception as exc:
             logging.error(exc)
-            return None
-        
+            return None, None
+
+    def find_username_from_socket(self, s: socket) -> str:
+        for username, (connection, _) in self.clients_port1.items():
+            if connection == s:
+                conn_username = username
+                return conn_username
+        for username, (connection, _) in self.clients_port2.items():
+            if connection == s:
+                conn_username = username
+                return conn_username
+
+    def delete_client_data(self, username: str, conn: socket):
+        if username in self.clients_port1.keys():
+            del self.clients_port1[username]
+        if username in self.clients_port2.keys():
+            del self.clients_port2[username]
+        if conn in self.active_connections:
+            self.active_connections.remove(conn)
+
     def communicate_with_client(self, conn: socket, addr: tuple):
         """ Method to communicate with connected client. It receives messages
             from client and matches known received commands with appropriate 
@@ -46,14 +73,13 @@ class Server:
         """
         while True:
             try:
-                message = conn.recv(BUF_SIZE).decode().split()
+                message = conn.recv(BUF_SIZE).decode().split(" ", 2)
                 command = message[0]
                 params = message[1:] if len(message)>1 else []
                 params.extend([conn, addr])
                 match command:
                     case "connect":
                         self.accept_connection(*params)
-                        logging.info(f"{params[0]} successfully connected")
                     case "disconnect":
                         self.accept_disconnection(*params)
                         break
@@ -61,6 +87,13 @@ class Server:
                         self.list_users(*params)
                     case "lf":
                         self.list_files(*params)
+                    case "send":
+                        self.deliver_message(*params)
+            except ConnectionResetError as exc:
+                username = self.find_username_from_socket(conn)
+                self.delete_client_data(username, conn)
+                logging.error(exc.strerror)
+                break
             except Exception as exc:
                 logging.error(f"{exc}")
                 break
@@ -73,27 +106,24 @@ class Server:
         if conn in self.active_connections:
             message = "Error: Attemp to establish a connection even if it's \
                 already established!"
-            # conn.send(message.encode())
-        elif username not in self.clients.keys():
-            self.clients[username] = (conn, addr)
+        elif username not in self.clients_port1.keys():
+            self.clients_port1[username] = (conn, addr)
             self.active_connections.append(conn)
             message = "OK"
-        elif username in self.clients.keys():
-            message = "Error: User with given username already exists!"
+            logging.info(f"{username} successfully connected")
+        elif username in self.clients_port1.keys():
+            message = "Error: User with given username already exists!"  
         conn.send(message.encode())
+        self.accept_connection_to_port2(username)
 
     def accept_disconnection(self, conn: socket, addr: tuple):
-        """ If client sends `disconnect` command, close connection with that client.
+        """ If client sends `disconnect` command, close connection with that 
+            client.
         """
         if conn in self.active_connections:
-            conn_username = ""
-            # find a username of conn's client
-            for username, (connection, _) in self.clients.items():
-                if connection == conn:
-                    conn_username = username
-            del self.clients[conn_username]
-            self.active_connections.remove(conn)
-            message = f"Server closed connection with {conn_username} successfully!"
+            username = self.find_username_from_socket(conn)
+            self.delete_client_data(username, conn)
+            message = f"Server closed connection with {username} successfully!"
             logging.info(message)
             conn.send(message.encode())
             conn.close()
@@ -107,7 +137,7 @@ class Server:
         """
         message = ""
         if conn in self.active_connections:
-            for client in self.clients.keys():
+            for client in self.clients_port1.keys():
                 message += client + " "
         else:
             message = "Error: Trying to access list of users before \
@@ -121,22 +151,68 @@ class Server:
 
         if conn in self.active_connections:
             directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
-            directory_items = [item for item in directory_items if not item.startswith("__")]
+            directory_items = [item for item in directory_items 
+                                    if not item.startswith("__")]
             message = " ".join(directory_items)
         else:
             message = "Error: Trying to access list of users before \
                 establishing a connection"
         conn.send(message.encode())
 
+    def deliver_message(self, username: str, message: str, conn: socket, \
+        addr: tuple):
+        """ Send the sender client's message to receiver client with username =
+            `username`
+        """
+        sender_conn: socket = conn
+        receiver_username = username
+        if sender_conn in self.active_connections:
+            # If user was not connected to server at port 2, accept connection from 
+            # him and add to dictionary #
+
+            receiver_conn: socket = self.clients_port2[receiver_username][0]
+            sender_username = self.find_username_from_socket(conn)
+            msg = f"{sender_username} {message}"
+            try:
+                logging.debug(self.find_username_from_socket(receiver_conn))
+                receiver_conn.send(msg.encode())
+            except Exception as exc:
+                logging.debug(exc)
+                msg = f"Error: Lost connection with {receiver_username}"
+                sender_conn.send(msg.encode())
+                self.delete_client_data(receiver_username, receiver_conn)
+                logging.error(msg)
+            else:
+                sender_conn.send("OK".encode())
+        else:
+            msg = "Error: Trying to send the message to another user, before \
+                establishing a connection with server"
+            sender_conn.send(msg.encode())
+
+    def accept_connection_to_port2(self, username: str) -> bool:
+        """ Accepts a connection request from a queue of requests. Method's aim
+            is to find the right connection request of the user with given 
+            username.
+        """
+        try:
+            # Blocked until client sends connect() #
+            client_conn, client_addr = self.redirect_socket.accept()
+            logging.debug("Accepted connection request to port 2")
+            self.clients_port2[username] = (client_conn, client_addr)
+        except Exception as exc:
+            logging.debug(exc)
+
     def start(self):
-        """ Server's main job - always waiting connection request at `SELF_PORT`.
+        """ Server's main job: always waiting connection request at `PORT1`.
         """
         try:
             while True:
                 logging.info("Waiting for a new connection...")
-                conn, addr = self.socket.accept()
-                self.communicate_with_client(conn, addr)
+                conn, addr = self.com_socket.accept()
+                logging.debug(addr)
+                t = Thread(target=self.communicate_with_client, args=[conn, addr])
+                t.start()
         except Exception as exc:
             logging.error(f"{exc}")
         finally:
-            self.socket.close()
+            self.com_socket.close()

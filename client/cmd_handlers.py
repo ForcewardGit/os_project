@@ -8,8 +8,8 @@ import logging
 
 
 # Format log messages #
-log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(level=logging.INFO, format=log_format)
+# log_format = "%(levelname)s: %(message)s"
+# logging.basicConfig(level=logging.DEBUG, format=log_format)
 
 
 def connect_cmd(ip: str, port: int):
@@ -60,4 +60,15 @@ def lf_cmd(s: socket):
         return 1
     except Exception as exc:
         logging.error(f"{exc}")
+        return 0
+
+def send_cmd(s: socket, username: str, message: str):
+    """ 
+    """
+    try:
+        m = f"send {username} {message}"
+        s.send(m.encode())
+        return 1
+    except Exception as exc:
+        logging.error(exc)
         return 0
