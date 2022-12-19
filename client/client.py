@@ -1,6 +1,7 @@
 """ Module that defines all the logic of the client.
 """
 import logging
+from io import StringIO
 from threading import Thread
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
 from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd
@@ -15,6 +16,7 @@ SERVER_IP = "localhost"
 PORT = 2021
 RECEIVE_PORT = 2022
 BUF_SIZE = 100
+automatic_input = False
 available_commands = ["connect", "disconnect", "lu", "lf", "send", "whoami"]
 
 
@@ -78,13 +80,32 @@ class Client:
                 # BLOCKED HERE #
                 msg = self.receive_socket.recv(BUF_SIZE).decode()
                 username, message = msg.split(" ", 1)
+                
                 logging.info(f"{username}: {message}")
             except ConnectionResetError as exc:
                 logging.error(f"{exc.strerror}")
+                self.connected = False
+                self.connected_port2 = False
+                self.receive_socket.close()
+                self.com_socket.close()
                 break
             except Exception as exc:
                 # logging.error(exc)
                 break
+    
+    def automatic_input(self):
+        """ Get the input from user and return command and parameters
+        """
+        import sys
+        class as_stdin:
+            def __init__(self, buffer):
+                self.buffer = buffer
+                self.original_stdin = sys.stdin
+            def __enter__(self):
+                sys.stdin = self.buffer
+            def __exit__(self, *exc):
+                sys.stdin = self.original_stdin
+        return as_stdin
     
     def ask_command(self):
         """ Method which is runned automatically when the client object is 
@@ -135,7 +156,7 @@ class Client:
                 logging.error(exc)
 
     def connect_to_port2(self):
-        """ 
+        """ Connect receive_socket to the server's 2022
         """
         try:
             self.receive_socket = socket(AF_INET, SOCK_STREAM)
