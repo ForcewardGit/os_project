@@ -43,6 +43,17 @@ class Client:
         except Exception:
             return False
     
+    def disconnect_attrs(self):
+        if self.connected:
+            self.connected = False
+        if self.connected_port2:
+            self.connected_port2 = False
+        if not self.is_socket_closed(self.receive_socket):
+            self.receive_socket.close()
+        if not self.is_socket_closed(self.com_socket):
+            self.com_socket.close()
+        self.username = ""
+    
     def debug_attrs(self):
         """ Method to keep track of client attributes [for debugging].
         """
@@ -80,14 +91,10 @@ class Client:
                 # BLOCKED HERE #
                 msg = self.receive_socket.recv(BUF_SIZE).decode()
                 username, message = msg.split(" ", 1)
-                
                 logging.info(f"{username}: {message}")
             except ConnectionResetError as exc:
                 logging.error(f"{exc.strerror}")
-                self.connected = False
-                self.connected_port2 = False
-                self.receive_socket.close()
-                self.com_socket.close()
+                self.disconnect_attrs()
                 break
             except Exception as exc:
                 # logging.error(exc)
@@ -200,12 +207,8 @@ class Client:
             if message.startswith("Error"):
                 logging.error(message.removeprefix("Error: "))
                 return None
-            self.connected = False
-            self.connected_port2 = False
-            self.username = ""
+            self.disconnect_attrs()
             logging.info(message)
-            self.receive_socket.close()
-            self.com_socket.close()
         else:
             logging.warning("There was no connection")
 
@@ -218,7 +221,7 @@ class Client:
                 server_response = self.com_socket.recv(BUF_SIZE).decode()
                 logging.info(server_response)
             else:
-                self.connected = False
+                self.disconnect_attrs()
         else:
             logging.warning("There was no connection")
 
@@ -250,6 +253,6 @@ class Client:
                 server_response = self.com_socket.recv(BUF_SIZE).decode()
                 logging.info(server_response)
             else:
-                self.connected = False
+                self.disconnect_attrs()
         else:
             logging.warning("There was no connection")

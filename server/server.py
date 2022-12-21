@@ -166,10 +166,8 @@ class Server:
         """
         sender_conn: socket = conn
         receiver_username = username
-        if sender_conn in self.active_connections:
-            # If user was not connected to server at port 2, accept connection from 
-            # him and add to dictionary #
-
+        if sender_conn in self.active_connections and receiver_username in \
+            self.clients_port2.keys():
             receiver_conn: socket = self.clients_port2[receiver_username][0]
             sender_username = self.find_username_from_socket(conn)
             msg = f"{sender_username} {message}"
@@ -184,7 +182,13 @@ class Server:
                 logging.error(msg)
             else:
                 sender_conn.send("OK".encode())
-        else:
+        # If the receiver is not online, send appropriate message to sender #
+        elif sender_conn in self.active_connections and receiver_username not \
+            in self.clients_port2.keys():
+            msg = f"Error: {receiver_username} is not online"
+            self.delete_client_data(receiver_username)
+            sender_conn.send(msg.encode())
+        elif sender_conn not in self.active_connections:
             msg = "Error: Trying to send the message to another user, before \
                 establishing a connection with server"
             sender_conn.send(msg.encode())
