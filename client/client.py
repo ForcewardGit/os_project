@@ -43,6 +43,14 @@ class Client:
         except Exception:
             return False
     
+    def check_username(self, username: str) -> str:
+        """"""
+        if len(username) < 3:
+            return "Username must contain at least 3 characters"
+        if not username[0].isalpha():
+            return "Username should start with alphabetic character"
+        return username
+            
     def disconnect_attrs(self):
         if self.connected:
             self.connected = False
@@ -179,6 +187,11 @@ class Client:
         ip = ip.rstrip()
         SERVER_IP = ip
         port = PORT
+
+        username_msg = self.check_username(username)
+        if username_msg != username:
+            logging.warning(f"{username_msg}")
+            return None
 
         if not self.connected:
             self.com_socket = connect_cmd(ip, port)
