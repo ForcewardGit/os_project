@@ -49,6 +49,9 @@ class Server:
             return None, None
 
     def find_username_from_socket(self, s: socket) -> str:
+        """ Method assumes that the given socket `s` is connected to one of 
+            server's ports.
+        """
         for username, (connection, _) in self.clients_port1.items():
             if connection == s:
                 conn_username = username
@@ -59,6 +62,9 @@ class Server:
                 return conn_username
 
     def delete_client_data(self, username: str, conn: socket):
+        """ Method that removes all data from attributes related to client with 
+            username=`username`
+        """
         if username in self.clients_port1.keys():
             del self.clients_port1[username]
         if username in self.clients_port2.keys():
@@ -166,32 +172,38 @@ class Server:
         """
         sender_conn: socket = conn
         receiver_username = username
+        # If both sender and receiver are online #
         if sender_conn in self.active_connections and receiver_username in \
             self.clients_port2.keys():
             receiver_conn: socket = self.clients_port2[receiver_username][0]
             sender_username = self.find_username_from_socket(conn)
-            msg = f"{sender_username} {message}"
+            # Don't let the sender to send a message to itself #
+            if sender_username == receiver_username:
+                error_msg = "Error: Sending message to yourself is prohibited."
+                sender_conn.send(error_msg.encode())
+                return None
+            msg4receiver = f"{sender_username} {message}"
             try:
                 logging.debug(self.find_username_from_socket(receiver_conn))
-                receiver_conn.send(msg.encode())
+                receiver_conn.send(msg4receiver.encode())
             except Exception as exc:
-                logging.debug(exc)
-                msg = f"Error: Lost connection with {receiver_username}"
-                sender_conn.send(msg.encode())
+                error_msg = f"Error: Lost connection with {receiver_username}"
+                sender_conn.send(error_msg.encode())
                 self.delete_client_data(receiver_username, receiver_conn)
-                logging.error(msg)
+                logging.error(error_msg)
             else:
                 sender_conn.send("OK".encode())
         # If the receiver is not online, send appropriate message to sender #
         elif sender_conn in self.active_connections and receiver_username not \
             in self.clients_port2.keys():
-            msg = f"Error: {receiver_username} is not online"
+            error_msg = f"Error: {receiver_username} is not online"
             self.delete_client_data(receiver_username)
-            sender_conn.send(msg.encode())
+            sender_conn.send(error_msg.encode())
+        # In some weird conditions, this may happen #
         elif sender_conn not in self.active_connections:
-            msg = "Error: Trying to send the message to another user, before \
+            error_msg = "Error: Trying to send the message to another user, before \
                 establishing a connection with server"
-            sender_conn.send(msg.encode())
+            sender_conn.send(error_msg.encode())
 
     def accept_connection_to_port2(self, username: str) -> bool:
         """ Accepts a connection request from a queue of requests. Method's aim
