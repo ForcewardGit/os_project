@@ -35,6 +35,8 @@ class Client:
         self.receiving_thread: Thread = None
     
     def whoami(self) -> str:
+        """ Returns the username to the user.
+        """
         return self.username
     
     def is_socket_closed(self, s: socket) -> bool:
@@ -44,7 +46,9 @@ class Client:
             return False
     
     def check_username(self, username: str) -> str:
-        """"""
+        """ Checks the username, if it's valid, returns itself, if not -> 
+            returns a string representing error message.
+        """
         if len(username) < 3:
             return "Username must contain at least 3 characters"
         if not username[0].isalpha():
@@ -52,6 +56,9 @@ class Client:
         return username
             
     def disconnect_attrs(self):
+        """ When connection lost with server by any reason, resets all the 
+            necessary attributes.
+        """
         if self.connected:
             self.connected = False
         if self.connected_port2:
@@ -74,19 +81,6 @@ class Client:
             logging.debug(f"receiving_thread: {self.receiving_thread.is_alive()}")
         except Exception:
             pass
-    
-    def check_server(self) -> bool:
-        """ Checks whether a server is alive.
-        """
-        try:
-            self.com_socket.settimeout(1.0)
-            self.com_socket.recv(BUF_SIZE).decode()
-        except Exception:
-            self.connected = False
-            self.com_socket = None
-            return False
-        else:
-            return True
 
     def receive_msg_from_other_users(self):
         """ Always wait at port 2 for a new message from other users.
@@ -107,20 +101,6 @@ class Client:
             except Exception as exc:
                 # logging.error(exc)
                 break
-    
-    def automatic_input(self):
-        """ Get the input from user and return command and parameters
-        """
-        import sys
-        class as_stdin:
-            def __init__(self, buffer):
-                self.buffer = buffer
-                self.original_stdin = sys.stdin
-            def __enter__(self):
-                sys.stdin = self.buffer
-            def __exit__(self, *exc):
-                sys.stdin = self.original_stdin
-        return as_stdin
     
     def ask_command(self):
         """ Method which is runned automatically when the client object is 
