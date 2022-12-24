@@ -118,7 +118,7 @@ class Server:
             message = "OK"
             logging.info(f"{username} successfully connected")
         elif username in self.clients_port1.keys():
-            message = "Error: User with given username already exists!"  
+            message = "Error: User with given username already exists!"
         conn.send(message.encode())
         self.accept_connection_to_port2(username)
 
@@ -197,7 +197,6 @@ class Server:
         elif sender_conn in self.active_connections and receiver_username not \
             in self.clients_port2.keys():
             error_msg = f"Error: {receiver_username} is not online"
-            self.delete_client_data(receiver_username)
             sender_conn.send(error_msg.encode())
         # In some weird conditions, this may happen #
         elif sender_conn not in self.active_connections:
