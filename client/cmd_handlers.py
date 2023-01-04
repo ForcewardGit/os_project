@@ -1,6 +1,14 @@
 """ Module that contains helper functions for the client. The logic of all of 
     them are similar: send message to server and return something, if message
     cannot be sent, return some other thing.
+
+    PROTOCOL:                         responsible function
+    ---------------------------------------------------------
+    `CONNECT USERNAME`              - connect_cmd(*params)
+    `DISCONNECT`                    - disconnect_cmd(*params)
+    `LU`                            - lu_cmd(*params)
+    `LF`                            - lf_cmd(*params)
+    `MESSAGE USER\nMSGSIZE MSGDATA` - send_cmd(*params)
 """
 
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
@@ -32,7 +40,7 @@ def disconnect_cmd(s: socket):
     """ Sends to server a message for disconnection.
     """
     try:
-        s.send("disconnect".encode())
+        s.sendall("disconnect".encode())
         return 1
     except ConnectionResetError as exc:
         pass
@@ -45,7 +53,7 @@ def lu_cmd(s: socket):
     """ Asks server to get list of all connected users
     """
     try:
-        s.send("lu".encode())
+        s.sendall("lu".encode())
         return 1
     except Exception as exc:
         logging.error(f"{exc}")
@@ -56,7 +64,7 @@ def lf_cmd(s: socket):
     """ Asks server to get list of all files in server's directory
     """
     try:
-        s.send("lf".encode())
+        s.sendall("lf".encode())
         return 1
     except Exception as exc:
         logging.error(f"{exc}")
@@ -67,7 +75,7 @@ def send_cmd(s: socket, username: str, message: str):
     """
     try:
         m = f"send {username} {message}"
-        s.send(m.encode())
+        s.sendall(m.encode())
         return 1
     except Exception as exc:
         logging.error(exc)

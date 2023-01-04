@@ -15,8 +15,7 @@ logging.basicConfig(level=logging.DEBUG, format=log_format)
 SERVER_IP = "localhost"
 PORT = 2021
 RECEIVE_PORT = 2022
-BUF_SIZE = 100
-automatic_input = False
+BUF_SIZE = 10
 available_commands = ["connect", "disconnect", "lu", "lf", "send", "whoami"]
 
 
@@ -44,6 +43,23 @@ class Client:
             return s.fileno() == -1
         except Exception:
             return False
+    
+    def receive_msg(self, sock: socket) -> bytes:
+        """ Receives the whole message from the `socket` whichever the buffer
+            size is.
+            Returns the encoded message received from `sock`.
+        """
+        whole_msg = b''
+        while True:
+            received_data = sock.recv(BUF_SIZE)
+            if not received_data:
+                break
+            elif b'\0' in received_data:
+                whole_msg += received_data
+                break
+            elif received_data:
+                whole_msg += received_data
+        return whole_msg
     
     def check_username(self, username: str) -> str:
         """ Checks the username, if it's valid, returns itself, if not -> 
@@ -91,7 +107,7 @@ class Client:
         while True:
             try:
                 # BLOCKED HERE #
-                msg = self.receive_socket.recv(BUF_SIZE).decode()
+                msg = self.receive_msg(self.receive_socket).decode()
                 username, message = msg.split(" ", 1)
                 logging.info(f"{username}: {message}")
             except ConnectionResetError as exc:
@@ -151,7 +167,7 @@ class Client:
                 logging.error(exc)
 
     def connect_to_port2(self):
-        """ Connect receive_socket to the server's 2022
+        """ Connect `receive_socket` to the server's 2022 port.
         """
         try:
             self.receive_socket = socket(AF_INET, SOCK_STREAM)
@@ -163,6 +179,8 @@ class Client:
     def connect(self, username: str, ip: str):
         """ Connect to the server with given `ip` and `port`.
         """
+        global SERVER_IP
+        
         ip = "127.0.0.1" if ip == "localhost" else ip
         ip = ip.rstrip()
         SERVER_IP = ip
@@ -177,8 +195,8 @@ class Client:
             self.com_socket = connect_cmd(ip, port)
             if self.com_socket:
                 self.com_socket.send(f"connect {username} {ip}".encode())
-                message = self.com_socket.recv(BUF_SIZE).decode()
-                if message == "OK":
+                message = self.receive_msg(self.com_socket).decode()
+                if "OK" in message:
                     self.connected = True if self.com_socket else False
                     self.username = username
                     self.connect_to_port2()
@@ -196,7 +214,7 @@ class Client:
         """
         if self.connected:
             disconnect_cmd(self.com_socket)
-            message = self.com_socket.recv(BUF_SIZE).decode()
+            message = self.receive_msg(self.com_socket).decode()
             if message.startswith("Error"):
                 logging.error(message.removeprefix("Error: "))
                 return None
@@ -211,7 +229,7 @@ class Client:
         """
         if self.connected:
             if lu_cmd(self.com_socket):
-                server_response = self.com_socket.recv(BUF_SIZE).decode()
+                server_response = self.receive_msg(self.com_socket).decode()
                 logging.info(server_response)
             else:
                 self.disconnect_attrs()
@@ -229,7 +247,7 @@ class Client:
         # If everything is OK #
         if self.connected:
             if send_cmd(self.com_socket, username, message):
-                server_response = self.com_socket.recv(BUF_SIZE).decode()
+                server_response = self.receive_msg(self.com_socket).decode()
                 if server_response.startswith("Error: "):
                     error_msg = server_response.removeprefix("Error: ")
                     logging.error(error_msg)
@@ -243,7 +261,7 @@ class Client:
         """
         if self.connected:
             if lf_cmd(self.com_socket):
-                server_response = self.com_socket.recv(BUF_SIZE).decode()
+                server_response = self.receive_msg(self.com_socket).decode()
                 logging.info(server_response)
             else:
                 self.disconnect_attrs()

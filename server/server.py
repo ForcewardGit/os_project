@@ -119,7 +119,7 @@ class Server:
             logging.info(f"{username} successfully connected")
         elif username in self.clients_port1.keys():
             message = "Error: User with given username already exists!"
-        conn.send(message.encode())
+        conn.send(message.encode() + b'\0')
         self.accept_connection_to_port2(username)
 
     def accept_disconnection(self, conn: socket, addr: tuple):
@@ -131,12 +131,12 @@ class Server:
             self.delete_client_data(username, conn)
             message = f"Server closed connection with {username} successfully!"
             logging.info(message)
-            conn.send(message.encode())
+            conn.send(message.encode() + b'\0')
             conn.close()
         else:
             message = "Error: Trying to disconnect before establishing a \
                 connection"
-            conn.send(message.encode())
+            conn.send(message.encode() + b'\0')
     
     def list_users(self, conn: socket, addr: tuple):
         """ Send the requested client the list of currently connected users
@@ -148,7 +148,7 @@ class Server:
         else:
             message = "Error: Trying to access list of users before \
                 establishing a connection"
-        conn.send(message.encode())
+        conn.send(message.encode() + b'\0')
 
     def list_files(self, conn: socket, addr: tuple):
         """ Send the requested client the list of files in server's directory
@@ -163,7 +163,7 @@ class Server:
         else:
             message = "Error: Trying to access list of users before \
                 establishing a connection"
-        conn.send(message.encode())
+        conn.send(message.encode() + b'\0')
 
     def deliver_message(self, username: str, message: str, conn: socket, \
         addr: tuple):
@@ -180,29 +180,29 @@ class Server:
             # Don't let the sender to send a message to itself #
             if sender_username == receiver_username:
                 error_msg = "Error: Sending message to yourself is prohibited."
-                sender_conn.send(error_msg.encode())
+                sender_conn.send(error_msg.encode() + b'\0')
                 return None
             msg4receiver = f"{sender_username} {message}"
             try:
                 logging.debug(self.find_username_from_socket(receiver_conn))
-                receiver_conn.send(msg4receiver.encode())
+                receiver_conn.send(msg4receiver.encode() + b'\0')
             except Exception as exc:
                 error_msg = f"Error: Lost connection with {receiver_username}"
-                sender_conn.send(error_msg.encode())
+                sender_conn.send(error_msg.encode() + b'\0')
                 self.delete_client_data(receiver_username, receiver_conn)
                 logging.error(error_msg)
             else:
-                sender_conn.send("OK".encode())
+                sender_conn.send("OK".encode() + b'\0')
         # If the receiver is not online, send appropriate message to sender #
         elif sender_conn in self.active_connections and receiver_username not \
             in self.clients_port2.keys():
             error_msg = f"Error: {receiver_username} is not online"
-            sender_conn.send(error_msg.encode())
+            sender_conn.send(error_msg.encode() + b'\0')
         # In some weird conditions, this may happen #
         elif sender_conn not in self.active_connections:
             error_msg = "Error: Trying to send the message to another user, before \
                 establishing a connection with server"
-            sender_conn.send(error_msg.encode())
+            sender_conn.send(error_msg.encode() + b'\0')
 
     def accept_connection_to_port2(self, username: str) -> bool:
         """ Accepts a connection request from a queue of requests. Method's aim
