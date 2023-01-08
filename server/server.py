@@ -1,10 +1,11 @@
 """ Module that defines all the logic of the server.
 """
 
+import os
 from socket import socket, AF_INET, SOCK_STREAM
 import logging
 from threading import Thread, Lock
-from .protocol import CONNECT, LU, LF, MESSAGE
+from .protocol import CONNECT, LU, LF, MESSAGE, READ
 
 
 # Format log messages #
@@ -97,6 +98,8 @@ class Server:
                         self.list_files(*params)
                     case "MESSAGE":
                         self.deliver_message(*params)
+                    case "READ":
+                        self.read_file(*params)
             except ConnectionResetError as exc:
                 username = self.find_username_from_socket(conn)
                 self.delete_client_data(username, conn)
@@ -154,8 +157,6 @@ class Server:
     def list_files(self, conn: socket, addr: tuple):
         """ Send the requested client the list of files in server's directory
         """
-        import os
-
         if conn in self.active_connections:
             directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
             directory_items = [item for item in directory_items 
@@ -234,6 +235,36 @@ class Server:
             self.clients_port2[username] = (client_conn, client_addr)
         except Exception as exc:
             logging.debug(exc)
+    
+    def read_file(self, file_name: str, conn: socket, addr: tuple):
+        """ Reads a file `file_name`. Send OK message if `file_name` is in 
+            server. Otherwise, appropriate error is sent to the client which 
+            requested
+        """
+        # Get the file names of server's directory #
+        directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        # Send appropriate msg to client depending on existance of requested 
+        # file #              
+        if file_name not in directory_items:
+            msg = f"Error: {file_name} is not found in server"
+            conn.send(msg.encode())
+            return None
+        else:
+            msg = OK
+            conn.send(msg.encode())
+        # Send the file using the protocol #
+        try:
+            with open(os.path.join("server", file_name), "r") as f:
+                file_data = f.read()
+                file_size = len(file_data)
+            conn.send(f"{file_size} {file_data}".encode())
+        except UnicodeDecodeError:
+            file_type = file_name.split(".")[-1]
+            error_msg = f"Error: The requested {file_type} file cannot be delivered"
+            conn.send(error_msg.encode())
+
 
     def start(self):
         """ Starts the server. Server's main job: always waiting connection

@@ -2,11 +2,12 @@
 """
 from threading import Thread, Lock
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
-from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
 from .loggers import main_logger, sec_logger
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
+from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd,\
+    read_cmd
 from .global_vars import SERVER_IP, MAIN_PORT, RECEIVE_PORT, BUF_SIZE, \
-    SERVER_BUF_SIZE, prompt_msg 
+    SERVER_BUF_SIZE, prompt_msg, error_prefix
 
 
 class Client:
@@ -92,8 +93,12 @@ class Client:
             Return the whole received data.
         """
         msg = sock.recv(BUF_SIZE).decode().split(maxsplit=1)
-        msg_size = int(msg[0])
-        msg_data = msg[1]
+        try:
+            msg_size = int(msg[0])
+            msg_data = msg[1]
+        except ValueError:
+            return " ".join(msg)
+            
         received_bytes = len(msg_data)
         total_received_bytes = received_bytes
         whole_message = msg_data
@@ -103,6 +108,13 @@ class Client:
             whole_message += msg
             total_received_bytes += received_bytes       
         return whole_message
+
+    def print_file_content(self, file_content: str):
+        """ Gets the file content and prints it in a beautiful way.
+        """
+        print("-"*80)
+        print(file_content)
+        print("-"*80)
 
     def receive_msg_from_other_users(self):
         """ Always wait at port 2 for a new message from other users.
@@ -157,6 +169,8 @@ class Client:
                     case "send":
                         self.send(*params)
                         self.debug_attrs()
+                    case "read":
+                        self.read(*params)
                     case "whoami":
                         main_logger.info(self.whoami())
                     case "quit":
@@ -226,7 +240,7 @@ class Client:
             disconnect_cmd(self.com_socket)
             message = self.receive_msg(self.com_socket)
             if message.startswith("Error"):
-                main_logger.error(message.removeprefix("Error: "))
+                main_logger.error(message.removeprefix(error_prefix))
                 return None
             self.disconnect_attrs()
             main_logger.info(message)
@@ -240,10 +254,22 @@ class Client:
         if self.connected:
             if lu_cmd(self.com_socket):
                 server_response = self.receive_msg(self.com_socket)
-                if server_response.startswith("Error: "):
+                if server_response.startswith(error_prefix):
                     main_logger.error(server_response)
                 else:
                     main_logger.info(server_response)
+            else:
+                self.disconnect_attrs()
+        else:
+            main_logger.warning("There was no connection")
+    
+    def lf(self):
+        """ List all the files of our server's folder.
+        """
+        if self.connected:
+            if lf_cmd(self.com_socket):
+                server_response = self.receive_msg(self.com_socket)
+                main_logger.info(server_response)
             else:
                 self.disconnect_attrs()
         else:
@@ -261,22 +287,35 @@ class Client:
         if self.connected:
             if send_cmd(self.com_socket, username, message):
                 server_response = self.receive_msg(self.com_socket)
-                if server_response.startswith("Error: "):
-                    error_msg = server_response.removeprefix("Error: ")
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
                     main_logger.error(error_msg)
                 else:
                     main_logger.info(server_response)
         else:
             main_logger.warning("There was no connection")
 
-    def lf(self):
-        """ List all the files of our server's folder.
+    def read(self, file_name: str):
+        """ Request the server's `file_name` content and print it on terminal. 
         """
         if self.connected:
-            if lf_cmd(self.com_socket):
+            if read_cmd(self.com_socket, file_name):
                 server_response = self.receive_msg(self.com_socket)
-                main_logger.info(server_response)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    main_logger.info(server_response)
+                    server_response2 = self.receive_data(self.com_socket)
+                    if server_response2.startswith(error_prefix):
+                        error_msg = server_response2.removeprefix(error_prefix)
+                        main_logger.error(error_msg)
+                    else:
+                        file_content = server_response2
+                        main_logger.info(f"Content of {file_name}:")
+                        self.print_file_content(file_content)
             else:
                 self.disconnect_attrs()
         else:
             main_logger.warning("There was no connection")
+        

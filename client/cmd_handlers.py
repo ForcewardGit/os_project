@@ -11,9 +11,8 @@
     `MESSAGE USER\nMSGSIZE MSGDATA` - send_cmd(*params)
 """
 
-import logging
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ
 from utils import send_msg_through_socket
 from .loggers import main_logger
 
@@ -68,6 +67,7 @@ def lf_cmd(s: socket):
         main_logger.error(f"{exc}")
         return 0
 
+
 def send_cmd(s: socket, username: str, message: str):
     """ Sends to server a message for another user with username=`username`.
         The two-step process is carried out.
@@ -78,6 +78,19 @@ def send_cmd(s: socket, username: str, message: str):
         m = f"{MESSAGE} {USER}"
         send_msg_through_socket(s, m)
         m = f"{MSGSIZE} {MSGDATA}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+
+def read_cmd(s: socket, file_name: str):
+    """ Ask server for a content of `file_name` file.
+    """
+    try:
+        FILENAME = file_name
+        m = f"{READ} {FILENAME}"
         send_msg_through_socket(s, m)
         return 1
     except Exception as exc:
