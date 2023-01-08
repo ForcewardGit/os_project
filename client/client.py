@@ -1,22 +1,12 @@
 """ Module that defines all the logic of the client.
 """
-import logging
-from io import StringIO
-from threading import Thread
+from threading import Thread, Lock
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
 from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd
-
-
-# Format log messages #
-log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=log_format)
-
-# Global Variables #
-SERVER_IP = "localhost"
-PORT = 2021
-RECEIVE_PORT = 2022
-BUF_SIZE = 10
-available_commands = ["connect", "disconnect", "lu", "lf", "send", "whoami"]
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
+from .loggers import main_logger, sec_logger
+from .global_vars import SERVER_IP, MAIN_PORT, RECEIVE_PORT, BUF_SIZE, \
+    SERVER_BUF_SIZE, prompt_msg 
 
 
 class Client:
@@ -32,6 +22,8 @@ class Client:
         self.com_socket: socket = None
         self.receive_socket: socket = None
         self.receiving_thread: Thread = None
+        self.print_lock = Lock()
+        self.message_received = False
     
     def whoami(self) -> str:
         """ Returns the username to the user.
@@ -44,22 +36,13 @@ class Client:
         except Exception:
             return False
     
-    def receive_msg(self, sock: socket) -> bytes:
+    def receive_msg(self, sock: socket) -> str:
         """ Receives the whole message from the `socket` whichever the buffer
             size is.
             Returns the encoded message received from `sock`.
         """
-        whole_msg = b''
-        while True:
-            received_data = sock.recv(BUF_SIZE)
-            if not received_data:
-                break
-            elif b'\0' in received_data:
-                whole_msg += received_data
-                break
-            elif received_data:
-                whole_msg += received_data
-        return whole_msg
+        msg = sock.recv(BUF_SIZE).decode()
+        return msg
     
     def check_username(self, username: str) -> str:
         """ Checks the username, if it's valid, returns itself, if not -> 
@@ -89,14 +72,37 @@ class Client:
         """ Method to keep track of client attributes [for debugging].
         """
         try:
-            logging.debug(f"username: {self.username}")
-            logging.debug(f"connected: {self.connected}")
-            logging.debug(f"connected_port2: {self.connected_port2}")
-            logging.debug(f"com_socket: {not self.is_socket_closed(self.com_socket)}")
-            logging.debug(f"receive_socket: {not self.is_socket_closed(self.receive_socket)}")
-            logging.debug(f"receiving_thread: {self.receiving_thread.is_alive()}")
+            main_logger.debug(f"username: {self.username}")
+            main_logger.debug(f"connected: {self.connected}")
+            main_logger.debug(f"connected_port2: {self.connected_port2}")
+            main_logger.debug(f"com_socket: {not self.is_socket_closed(self.com_socket)}")
+            main_logger.debug(f"receive_socket: {not self.is_socket_closed(self.receive_socket)}")
+            main_logger.debug(f"receiving_thread: {self.receiving_thread.is_alive()}")
         except Exception:
             pass
+    
+    def check_user_input(self, user_input):
+        if len(user_input) > SERVER_BUF_SIZE:
+            raise TypeError(
+                f"Too long input. Max input size is {SERVER_BUF_SIZE}")
+    
+    def receive_data(self, sock: socket) -> str:
+        """ Receive whole data sent from client with size of data + space + 
+            data content. 
+            Return the whole received data.
+        """
+        msg = sock.recv(BUF_SIZE).decode().split(maxsplit=1)
+        msg_size = int(msg[0])
+        msg_data = msg[1]
+        received_bytes = len(msg_data)
+        total_received_bytes = received_bytes
+        whole_message = msg_data
+        while total_received_bytes < msg_size:
+            msg = sock.recv(BUF_SIZE).decode()
+            received_bytes = len(msg)
+            whole_message += msg
+            total_received_bytes += received_bytes       
+        return whole_message
 
     def receive_msg_from_other_users(self):
         """ Always wait at port 2 for a new message from other users.
@@ -107,15 +113,19 @@ class Client:
         while True:
             try:
                 # BLOCKED HERE #
-                msg = self.receive_msg(self.receive_socket).decode()
-                username, message = msg.split(" ", 1)
-                logging.info(f"{username}: {message}")
+                command = self.receive_msg(self.receive_socket)
+                if command:
+                    msg = self.receive_data(self.receive_socket)
+                    sec_logger.info(f"{msg}")
+                else:
+                    break
+
             except ConnectionResetError as exc:
-                logging.error(f"{exc.strerror}")
+                sec_logger.error(f"{exc.strerror}")
                 self.disconnect_attrs()
                 break
             except Exception as exc:
-                # logging.error(exc)
+                # main_logger.error(exc)
                 break
     
     def ask_command(self):
@@ -125,7 +135,8 @@ class Client:
         """
         while True:
             try:
-                user_input = input("Enter a command: ")
+                user_input = input(prompt_msg)
+                self.check_user_input(user_input)
                 user_input = user_input.split(maxsplit=2)
                 command = user_input[0].lower()
                 params = user_input[1:] if len(user_input)>1 else []
@@ -147,24 +158,24 @@ class Client:
                         self.send(*params)
                         self.debug_attrs()
                     case "whoami":
-                        logging.info(self.whoami())
+                        main_logger.info(self.whoami())
                     case "quit":
                         # Disconnect from server and finish the client program
                         self.disconnect(*params)
                         self.debug_attrs()
                         break
                     case _:
-                        logging.warning(f"Command '{command}' not found")
+                        main_logger.warning(f"Command '{command}' not found")
             except IndexError:
-                logging.warning("Type a valid input")
+                main_logger.warning("Type a valid input")
             except ValueError as exc:
-                logging.warning(exc)
+                main_logger.warning(exc)
             except TypeError as exc:
-                logging.error(exc)
+                main_logger.error(exc)
             except ConnectionResetError as exc:
-                logging.error(exc.strerror)
+                main_logger.error(exc.strerror)
             except ConnectionRefusedError as exc:
-                logging.error(exc)
+                main_logger.error(f"{exc.strerror}")
 
     def connect_to_port2(self):
         """ Connect `receive_socket` to the server's 2022 port.
@@ -174,39 +185,38 @@ class Client:
             self.receive_socket.connect((SERVER_IP, RECEIVE_PORT))
             self.connected_port2 = True
         except Exception as exc:
-            logging.debug(exc)
+            main_logger.debug(exc)
 
     def connect(self, username: str, ip: str):
         """ Connect to the server with given `ip` and `port`.
         """
-        global SERVER_IP
-        
+        global SERVER_IP        
         ip = "127.0.0.1" if ip == "localhost" else ip
         ip = ip.rstrip()
         SERVER_IP = ip
-        port = PORT
+        port = MAIN_PORT
 
         username_msg = self.check_username(username)
         if username_msg != username:
-            logging.warning(f"{username_msg}")
+            main_logger.warning(f"{username_msg}")
             return None
 
         if not self.connected:
             self.com_socket = connect_cmd(ip, port)
             if self.com_socket:
-                self.com_socket.send(f"connect {username} {ip}".encode())
-                message = self.receive_msg(self.com_socket).decode()
-                if "OK" in message:
+                self.com_socket.send(f"CONNECT {username}".encode())
+                message = self.receive_msg(self.com_socket)
+                if message == "OK":
                     self.connected = True if self.com_socket else False
                     self.username = username
                     self.connect_to_port2()
                     self.receiving_thread = Thread(target=self.receive_msg_from_other_users)
                     self.receiving_thread.start()
-                    logging.info(f"Successfully connected to server with ip={ip}")
+                    main_logger.info(f"Successfully connected to server with ip={ip}")
                 else:
-                    logging.error(message)
+                    main_logger.error(message)
         elif self.connected:
-            logging.warning("Already connected")
+            main_logger.warning("Already connected")
 
     def disconnect(self):
         """ Disconnect from the server, to which our client is currently
@@ -214,14 +224,14 @@ class Client:
         """
         if self.connected:
             disconnect_cmd(self.com_socket)
-            message = self.receive_msg(self.com_socket).decode()
+            message = self.receive_msg(self.com_socket)
             if message.startswith("Error"):
-                logging.error(message.removeprefix("Error: "))
+                main_logger.error(message.removeprefix("Error: "))
                 return None
             self.disconnect_attrs()
-            logging.info(message)
+            main_logger.info(message)
         else:
-            logging.warning("There was no connection")
+            main_logger.warning("There was no connection")
 
     def lu(self):
         """ Print all the users which are currently connected to the server,
@@ -229,12 +239,15 @@ class Client:
         """
         if self.connected:
             if lu_cmd(self.com_socket):
-                server_response = self.receive_msg(self.com_socket).decode()
-                logging.info(server_response)
+                server_response = self.receive_msg(self.com_socket)
+                if server_response.startswith("Error: "):
+                    main_logger.error(server_response)
+                else:
+                    main_logger.info(server_response)
             else:
                 self.disconnect_attrs()
         else:
-            logging.warning("There was no connection")
+            main_logger.warning("There was no connection")
 
     def send(self, username: str, message: str):
         """ Send a message to another user with username = `username`
@@ -247,23 +260,23 @@ class Client:
         # If everything is OK #
         if self.connected:
             if send_cmd(self.com_socket, username, message):
-                server_response = self.receive_msg(self.com_socket).decode()
+                server_response = self.receive_msg(self.com_socket)
                 if server_response.startswith("Error: "):
                     error_msg = server_response.removeprefix("Error: ")
-                    logging.error(error_msg)
+                    main_logger.error(error_msg)
                 else:
-                    logging.info(server_response)
+                    main_logger.info(server_response)
         else:
-            logging.warning("There was no connection")
+            main_logger.warning("There was no connection")
 
     def lf(self):
         """ List all the files of our server's folder.
         """
         if self.connected:
             if lf_cmd(self.com_socket):
-                server_response = self.receive_msg(self.com_socket).decode()
-                logging.info(server_response)
+                server_response = self.receive_msg(self.com_socket)
+                main_logger.info(server_response)
             else:
                 self.disconnect_attrs()
         else:
-            logging.warning("There was no connection")
+            main_logger.warning("There was no connection")

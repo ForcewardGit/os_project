@@ -11,16 +11,14 @@
     `MESSAGE USER\nMSGSIZE MSGDATA` - send_cmd(*params)
 """
 
-from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
 import logging
+from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
+from utils import send_msg_through_socket
+from .loggers import main_logger
 
 
-# Format log messages #
-# log_format = "%(levelname)s: %(message)s"
-# logging.basicConfig(level=logging.DEBUG, format=log_format)
-
-
-def connect_cmd(ip: str, port: int):
+def connect_cmd(ip: str, port: int) -> socket | None:
     """ Create the socket, connect it to the server and return it
     """
     try:
@@ -28,11 +26,11 @@ def connect_cmd(ip: str, port: int):
         s.connect((ip, port))
         return s
     except ConnectionRefusedError as exc:
-        logging.error(f"{exc.strerror}")
+        main_logger.error(f"{exc.strerror}")
     except gaierror:
-        logging.error("Invalid IP address")
+        main_logger.error("Invalid IP address")
     except TimeoutError as exc:
-        logging.error(exc.strerror)
+        main_logger.error(exc.strerror)
     return None
 
 
@@ -40,12 +38,12 @@ def disconnect_cmd(s: socket):
     """ Sends to server a message for disconnection.
     """
     try:
-        s.sendall("disconnect".encode())
+        send_msg_through_socket(s, DISCONNECT)
         return 1
     except ConnectionResetError as exc:
         pass
     except Exception as exc:
-        logging.error(f"{exc}")
+        main_logger.error(f"{exc}")
     return 0
 
 
@@ -53,10 +51,10 @@ def lu_cmd(s: socket):
     """ Asks server to get list of all connected users
     """
     try:
-        s.sendall("lu".encode())
+        send_msg_through_socket(s, LU)
         return 1
     except Exception as exc:
-        logging.error(f"{exc}")
+        main_logger.error(f"{exc}")
     return 0
 
 
@@ -64,19 +62,24 @@ def lf_cmd(s: socket):
     """ Asks server to get list of all files in server's directory
     """
     try:
-        s.sendall("lf".encode())
+        send_msg_through_socket(s, LF)
         return 1
     except Exception as exc:
-        logging.error(f"{exc}")
+        main_logger.error(f"{exc}")
         return 0
 
 def send_cmd(s: socket, username: str, message: str):
-    """ 
+    """ Sends to server a message for another user with username=`username`.
+        The two-step process is carried out.
     """
     try:
-        m = f"send {username} {message}"
-        s.sendall(m.encode())
+        USER = username
+        MSGSIZE, MSGDATA = len(message), message
+        m = f"{MESSAGE} {USER}"
+        send_msg_through_socket(s, m)
+        m = f"{MSGSIZE} {MSGDATA}"
+        send_msg_through_socket(s, m)
         return 1
     except Exception as exc:
-        logging.error(exc)
+        main_logger.error(exc)
         return 0

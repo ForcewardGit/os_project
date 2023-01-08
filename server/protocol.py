@@ -1,0 +1,4 @@
+CONNECT = "CONNECT"
+LU = "LU"
+LF = "LF"
+MESSAGE = "MESSAGE"
