@@ -1,3 +1,6 @@
+""" Module that defines some global variables for the client application.
+"""
+
 SERVER_IP = "localhost"
 MAIN_PORT = 2021
 RECEIVE_PORT = 2022

@@ -1,13 +1,14 @@
 """ Module that defines all the logic of the client.
 """
+import os
 from threading import Thread, Lock
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
 from .loggers import main_logger, sec_logger
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE
 from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd,\
-    read_cmd
+    read_cmd, write_cmd, send_file_cmd, overwrite_cmd
 from .global_vars import SERVER_IP, MAIN_PORT, RECEIVE_PORT, BUF_SIZE, \
     SERVER_BUF_SIZE, prompt_msg, error_prefix
+from utils import send_msg_through_socket, receive_whole_data, receive_msg
 
 
 class Client:
@@ -37,20 +38,12 @@ class Client:
         except Exception:
             return False
     
-    def receive_msg(self, sock: socket) -> str:
-        """ Receives the whole message from the `socket` whichever the buffer
-            size is.
-            Returns the encoded message received from `sock`.
-        """
-        msg = sock.recv(BUF_SIZE).decode()
-        return msg
-    
     def check_username(self, username: str) -> str:
         """ Checks the username, if it's valid, returns itself, if not -> 
             returns a string representing error message.
         """
-        if len(username) < 3:
-            return "Username must contain at least 3 characters"
+        if len(username) < 3 or len(username) > 30:
+            return "Username must contain at least 3 characters and at most 30"
         if not username[0].isalpha():
             return "Username should start with alphabetic character"
         return username
@@ -82,32 +75,10 @@ class Client:
         except Exception:
             pass
     
-    def check_user_input(self, user_input):
+    def check_user_input_size(self, user_input: str):
         if len(user_input) > SERVER_BUF_SIZE:
             raise TypeError(
                 f"Too long input. Max input size is {SERVER_BUF_SIZE}")
-    
-    def receive_data(self, sock: socket) -> str:
-        """ Receive whole data sent from client with size of data + space + 
-            data content. 
-            Return the whole received data.
-        """
-        msg = sock.recv(BUF_SIZE).decode().split(maxsplit=1)
-        try:
-            msg_size = int(msg[0])
-            msg_data = msg[1]
-        except ValueError:
-            return " ".join(msg)
-            
-        received_bytes = len(msg_data)
-        total_received_bytes = received_bytes
-        whole_message = msg_data
-        while total_received_bytes < msg_size:
-            msg = sock.recv(BUF_SIZE).decode()
-            received_bytes = len(msg)
-            whole_message += msg
-            total_received_bytes += received_bytes       
-        return whole_message
 
     def print_file_content(self, file_content: str):
         """ Gets the file content and prints it in a beautiful way.
@@ -125,9 +96,9 @@ class Client:
         while True:
             try:
                 # BLOCKED HERE #
-                command = self.receive_msg(self.receive_socket)
+                command = receive_msg(self.receive_socket, BUF_SIZE)
                 if command:
-                    msg = self.receive_data(self.receive_socket)
+                    msg = receive_whole_data(self.receive_socket, BUF_SIZE)
                     sec_logger.info(f"{msg}")
                 else:
                     break
@@ -148,7 +119,7 @@ class Client:
         while True:
             try:
                 user_input = input(prompt_msg)
-                self.check_user_input(user_input)
+                self.check_user_input_size(user_input)
                 user_input = user_input.split(maxsplit=2)
                 command = user_input[0].lower()
                 params = user_input[1:] if len(user_input)>1 else []
@@ -171,11 +142,16 @@ class Client:
                         self.debug_attrs()
                     case "read":
                         self.read(*params)
+                    case "write":
+                        self.write(*params)
+                    case "overwrite":
+                        self.overwrite(*params)
                     case "whoami":
                         main_logger.info(self.whoami())
                     case "quit":
                         # Disconnect from server and finish the client program
                         self.disconnect(*params)
+                        main_logger.info("Client finished his job!")
                         self.debug_attrs()
                         break
                     case _:
@@ -219,14 +195,16 @@ class Client:
             self.com_socket = connect_cmd(ip, port)
             if self.com_socket:
                 self.com_socket.send(f"CONNECT {username}".encode())
-                message = self.receive_msg(self.com_socket)
+                message = receive_msg(self.com_socket, BUF_SIZE)
                 if message == "OK":
                     self.connected = True if self.com_socket else False
                     self.username = username
                     self.connect_to_port2()
-                    self.receiving_thread = Thread(target=self.receive_msg_from_other_users)
+                    self.receiving_thread = Thread(
+                        target=self.receive_msg_from_other_users)
                     self.receiving_thread.start()
-                    main_logger.info(f"Successfully connected to server with ip={ip}")
+                    info_msg = f"Successfully connected to server with ip={ip}"
+                    main_logger.info(info_msg)
                 else:
                     main_logger.error(message)
         elif self.connected:
@@ -238,7 +216,7 @@ class Client:
         """
         if self.connected:
             disconnect_cmd(self.com_socket)
-            message = self.receive_msg(self.com_socket)
+            message = receive_msg(self.com_socket, BUF_SIZE)
             if message.startswith("Error"):
                 main_logger.error(message.removeprefix(error_prefix))
                 return None
@@ -253,7 +231,7 @@ class Client:
         """
         if self.connected:
             if lu_cmd(self.com_socket):
-                server_response = self.receive_msg(self.com_socket)
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
                 if server_response.startswith(error_prefix):
                     main_logger.error(server_response)
                 else:
@@ -268,7 +246,7 @@ class Client:
         """
         if self.connected:
             if lf_cmd(self.com_socket):
-                server_response = self.receive_msg(self.com_socket)
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
                 main_logger.info(server_response)
             else:
                 self.disconnect_attrs()
@@ -286,7 +264,7 @@ class Client:
         # If everything is OK #
         if self.connected:
             if send_cmd(self.com_socket, username, message):
-                server_response = self.receive_msg(self.com_socket)
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
                 if server_response.startswith(error_prefix):
                     error_msg = server_response.removeprefix(error_prefix)
                     main_logger.error(error_msg)
@@ -300,13 +278,14 @@ class Client:
         """
         if self.connected:
             if read_cmd(self.com_socket, file_name):
-                server_response = self.receive_msg(self.com_socket)
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
                 if server_response.startswith(error_prefix):
                     error_msg = server_response.removeprefix(error_prefix)
                     main_logger.error(error_msg)
                 else:
                     main_logger.info(server_response)
-                    server_response2 = self.receive_data(self.com_socket)
+                    server_response2 = receive_whole_data(
+                        self.com_socket, BUF_SIZE)
                     if server_response2.startswith(error_prefix):
                         error_msg = server_response2.removeprefix(error_prefix)
                         main_logger.error(error_msg)
@@ -319,3 +298,73 @@ class Client:
         else:
             main_logger.warning("There was no connection")
         
+    def write(self, file_name: str):
+        """ Sends the content of `file_name` to server.
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if self.connected:
+            if file_name not in directory_items:
+                main_logger.error(f"{file_name} is not found in client")
+                return None
+            
+            with open(os.path.join("client", file_name), "r") as f:
+                file_data = f.read()
+                file_size = len(file_data)
+            
+            if write_cmd(self.com_socket, file_name):
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    main_logger.info(f"Server is ready to get contents of {file_name}...")
+                    if send_file_cmd(self.com_socket, file_data, file_size):
+                        server_response2 = receive_msg(self.com_socket, BUF_SIZE)
+                        if server_response.startswith(error_prefix):
+                            error_msg = server_response2.removeprefix(error_prefix)
+                            main_logger.error(error_msg)
+                        else:
+                            main_logger.info(server_response2)
+                    else:
+                        self.disconnect_attrs()
+            else:
+                self.disconnect_attrs()
+
+        else:
+            main_logger.warning("There was no connection")
+    
+    def overwrite(self, file_name: str):
+        """ Transfers the file `file_name` to server. If the server already has
+            file `file_name`, that file is updated with the file content sent by
+            client.
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if self.connected:
+            if file_name not in directory_items:
+                main_logger.error(f"{file_name} is not found in client")
+                return None
+            with open(os.path.join("client", file_name), "r") as f:
+                file_data = f.read()
+                file_size = len(file_data)
+            if overwrite_cmd(self.com_socket, file_name):
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    main_logger.info(f"Server is ready to get contents of {file_name}...")
+                    if send_file_cmd(self.com_socket, file_data, file_size):
+                        server_response2 = receive_msg(self.com_socket, BUF_SIZE)
+                        if server_response.startswith(error_prefix):
+                            error_msg = server_response2.removeprefix(error_prefix)
+                            main_logger.error(error_msg)
+                        else:
+                            main_logger.info(server_response2)
+                    else:
+                        self.disconnect_attrs()
+        else:
+            main_logger.warning("There was no connection")

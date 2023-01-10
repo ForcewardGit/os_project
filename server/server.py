@@ -6,14 +6,14 @@ from socket import socket, AF_INET, SOCK_STREAM
 import logging
 from threading import Thread, Lock
 from .protocol import CONNECT, LU, LF, MESSAGE, READ
-
+from utils import send_msg_through_socket, receive_whole_data, receive_msg
 
 # Format log messages #
 log_format = "%(levelname)s: %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=log_format)
 
 # Global Variables #
-SELF_IP = "127.0.0.1"   # IP address of server
+SELF_IP = "127.0.0.1"   # IP address of server, by default it is 127.0.0.1
 PORT1 = 2021            # Port at which server waits clients and interacts with them
 PORT2 = 2022            # Port to which server sends messages whenever accepts them in `send` command
 BUF_SIZE = 4096         # Buffer size for receiving items
@@ -28,11 +28,10 @@ class Server:
         self.ip = ip
         self.port1 = port1
         self.port2 = port2
-        self.clients_port1 = {}       # Dictionary which contains username: his connection info key-value pairs for port 1
-        self.clients_port2 = {}       # Dictionary which contains username: his connection info key-value pairs for port 2
-        self.active_connections = []  # List of client connections who are currently connected to this server
+        self.clients_port1: dict[str, (tuple, socket)] = {}
+        self.clients_port2: dict[str, (tuple, socket)] = {}
+        self.active_connections: list[socket] = []
         self.com_socket, self.redirect_socket = self.configure_sockets()
-        self.lock = Lock()
 
     def configure_sockets(self):
         """ Create and return socket objects. If some error occurred, the method
@@ -50,6 +49,12 @@ class Server:
         except Exception as exc:
             logging.error(exc)
             return None, None
+        
+    def disconnect_clients(self):
+        """ Disconnects all currently connected clients from server.
+        """
+        for client in self.active_connections:
+            client.close()
 
     def find_username_from_socket(self, s: socket) -> str:
         """ Method assumes that the given socket `s` is connected to one of 
@@ -82,7 +87,7 @@ class Server:
         """
         while True:
             try:
-                message = conn.recv(BUF_SIZE).decode().split(" ", 1)
+                message = receive_msg(conn, BUF_SIZE).split(" ", 1)
                 command = message[0]
                 params = message[1:] if len(message)>1 else []
                 params.extend([conn, addr])
@@ -100,6 +105,10 @@ class Server:
                         self.deliver_message(*params)
                     case "READ":
                         self.read_file(*params)
+                    case "WRITE":
+                        self.write_file(*params)
+                    case "OVERWRITE":
+                        self.overwrite_file(*params)
             except ConnectionResetError as exc:
                 username = self.find_username_from_socket(conn)
                 self.delete_client_data(username, conn)
@@ -167,29 +176,11 @@ class Server:
                 establishing a connection"
         conn.send(message.encode())
 
-    def receive_data(self, sock: socket) -> str:
-        """ Receive whole data sent from client with size of data + space + 
-            data content. 
-            Return the whole received data.
-        """
-        msg = sock.recv(BUF_SIZE).decode().split(maxsplit=1)
-        msg_size = int(msg[0])
-        msg_data = msg[1]
-        received_bytes = len(msg_data)
-        total_received_bytes = received_bytes
-        whole_message = msg_data
-        while total_received_bytes < msg_size:
-            msg = sock.recv(BUF_SIZE).decode()
-            received_bytes = len(msg)
-            whole_message += msg
-            total_received_bytes += received_bytes       
-        return whole_message
-
     def deliver_message(self, username: str, conn: socket, addr: tuple):
         """ Send the sender client's message to receiver client with username =
             `username`
         """
-        message = self.receive_data(conn)
+        message = receive_whole_data(conn, BUF_SIZE)
         sender_conn: socket = conn
         receiver_username = username
         # If both sender and receiver are online #
@@ -262,9 +253,48 @@ class Server:
             conn.send(f"{file_size} {file_data}".encode())
         except UnicodeDecodeError:
             file_type = file_name.split(".")[-1]
-            error_msg = f"Error: The requested {file_type} file cannot be delivered"
+            error_msg = f"Error: Requested {file_type} file cannot be delivered"
             conn.send(error_msg.encode())
+        
+    def write_file(self, file_name: str, conn: socket, addr: tuple):
+        """ Writes a new file `file_name`. First checks whether no file with 
+            name `file_name` exists in server, then receives the content of file
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if file_name in directory_items:
+            msg = f"Error: File with name {file_name} is already in server"
+            conn.send(msg.encode())
+            return None
+        else:
+            send_msg_through_socket(conn, OK)
+        try:
+            file_content = receive_whole_data(conn, BUF_SIZE)
+            with open(os.path.join("server", file_name), "w") as f:
+                f.write(file_content)
+        except Exception as exc:
+            send_msg_through_socket(conn, exc.__str__())
+        else:
+            send_msg_through_socket(conn, OK)
 
+    def overwrite_file(self, file_name: str, conn: socket, addr: tuple):
+        """ Overwrites the `file_name`
+        """
+        if file_name.endswith(".py"):
+            m = "Error: The requested file cannot be modified"
+            send_msg_through_socket(conn, m)
+            return None
+        else:
+            send_msg_through_socket(conn, OK)
+        try:
+            file_content = receive_whole_data(conn, BUF_SIZE)
+            with open(os.path.join("server", file_name), "w") as f:
+                f.write(file_content)
+        except Exception as exc:
+            send_msg_through_socket(conn, f"Error: {exc.__str__()}")
+        else:
+            send_msg_through_socket(conn, OK)
 
     def start(self):
         """ Starts the server. Server's main job: always waiting connection
@@ -277,7 +307,10 @@ class Server:
                 logging.debug(addr)
                 t = Thread(target=self.communicate_with_client, args=[conn, addr])
                 t.start()
+        except KeyboardInterrupt:
+            logging.info("Server is shutting down...")
         except Exception as exc:
             logging.error(f"{exc}")
         finally:
+            self.disconnect_clients()
             self.com_socket.close()

@@ -1,3 +1,6 @@
+""" Module that configures Logger objects for the client program.
+"""
+
 import logging
 from .global_vars import prompt_msg
 
@@ -12,7 +15,7 @@ main_logger.addHandler(main_sh)
 
 
 # Configure sec_logger for usage in client's receiving thread #
-sec_logger = logging.getLogger("custom_logger")
+sec_logger = logging.getLogger("sec_logger")
 sec_logger.setLevel(logging.INFO)
 sec_sh = logging.StreamHandler()
 sec_sh.setLevel(logging.DEBUG)

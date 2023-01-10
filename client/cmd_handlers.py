@@ -12,7 +12,7 @@
 """
 
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ, WRITE, OVERWRITE
 from utils import send_msg_through_socket
 from .loggers import main_logger
 
@@ -91,6 +91,47 @@ def read_cmd(s: socket, file_name: str):
     try:
         FILENAME = file_name
         m = f"{READ} {FILENAME}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+
+def write_cmd(s: socket, file_name: str):
+    """ Sends to server the request write `file_name`.
+    """
+    try:
+        FILENAME = file_name
+        m = f"{WRITE} {FILENAME}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+
+def send_file_cmd(s: socket, file_data: str, file_size: int):
+    """ Sends to server the content and size of the file that's already created
+        in server.
+    """
+    try:
+        FILESIZE = file_size
+        FILEDATA = file_data
+        m = f"{FILESIZE} {FILEDATA}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+
+def overwrite_cmd(s: socket, file_name: str):
+    """ Sends to server the request to overwrite the `file_name`.
+    """
+    try:
+        FILENAME = file_name
+        m = f"{OVERWRITE} {FILENAME}"
         send_msg_through_socket(s, m)
         return 1
     except Exception as exc:
