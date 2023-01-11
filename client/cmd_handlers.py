@@ -11,27 +11,23 @@
     `MESSAGE USER\nMSGSIZE MSGDATA` - send_cmd(*params)
 """
 
-from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ, WRITE, OVERWRITE
+from socket import socket
+from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ, WRITE,\
+    OVERWRITE, OVERREAD, APPEND, APPENDFILE
 from utils import send_msg_through_socket
 from .loggers import main_logger
 
 
-def connect_cmd(ip: str, port: int) -> socket | None:
-    """ Create the socket, connect it to the server and return it
+def connect_cmd(s: socket, username: str):
+    """ Send connection command to server.
     """
     try:
-        s = socket(AF_INET, SOCK_STREAM)
-        s.connect((ip, port))
-        return s
-    except ConnectionRefusedError as exc:
-        main_logger.error(f"{exc.strerror}")
-    except gaierror:
-        main_logger.error("Invalid IP address")
-    except TimeoutError as exc:
-        main_logger.error(exc.strerror)
-    return None
-
+        m = f"{CONNECT} {username}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(f"{exc}")
+    return 0
 
 def disconnect_cmd(s: socket):
     """ Sends to server a message for disconnection.
@@ -111,13 +107,13 @@ def write_cmd(s: socket, file_name: str):
         return 0
 
 
-def send_file_cmd(s: socket, file_data: str, file_size: int):
+def send_file_cmd(s: socket, file_content: str, file_size: int):
     """ Sends to server the content and size of the file that's already created
         in server.
     """
     try:
         FILESIZE = file_size
-        FILEDATA = file_data
+        FILEDATA = file_content
         m = f"{FILESIZE} {FILEDATA}"
         send_msg_through_socket(s, m)
         return 1
@@ -132,6 +128,43 @@ def overwrite_cmd(s: socket, file_name: str):
     try:
         FILENAME = file_name
         m = f"{OVERWRITE} {FILENAME}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+def overread_cmd(s: socket, file_name: str):
+    """ Sends to server the request to update `file_name`
+    """
+    try:
+        FILENAME = file_name
+        m = f"{OVERREAD} {FILENAME}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+def append_cmd(s: socket, file_name: str):
+    """ Ask server for a content of `file_name` file.
+    """
+    try:
+        FILENAME = file_name
+        m = f"{APPEND} {FILENAME}"
+        send_msg_through_socket(s, m)
+        return 1
+    except Exception as exc:
+        main_logger.error(exc)
+        return 0
+
+def appendfile_cmd(s: socket, client_fname: str, server_fname):
+    """ Sending command to server to update
+    """
+    try:
+        SRC_FILENAME = client_fname
+        DST_FILENAME = server_fname
+        m = f"{APPENDFILE} {SRC_FILENAME} {DST_FILENAME}"
         send_msg_through_socket(s, m)
         return 1
     except Exception as exc:

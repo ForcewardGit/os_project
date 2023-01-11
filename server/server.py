@@ -87,7 +87,7 @@ class Server:
         """
         while True:
             try:
-                message = receive_msg(conn, BUF_SIZE).split(" ", 1)
+                message = receive_msg(conn, BUF_SIZE).split()
                 command = message[0]
                 params = message[1:] if len(message)>1 else []
                 params.extend([conn, addr])
@@ -109,6 +109,12 @@ class Server:
                         self.write_file(*params)
                     case "OVERWRITE":
                         self.overwrite_file(*params)
+                    case "OVERREAD":
+                        self.overread_file(*params)
+                    case "APPEND":
+                        self.append_file(*params)
+                    case "APPENDFILE":
+                        self.appendfile_file(*params)
             except ConnectionResetError as exc:
                 username = self.find_username_from_socket(conn)
                 self.delete_client_data(username, conn)
@@ -132,7 +138,7 @@ class Server:
             logging.info(f"{username} successfully connected")
         elif username in self.clients_port1.keys():
             message = "Error: User with given username already exists!"
-        conn.send(message.encode())
+        send_msg_through_socket(conn, message)
         self.accept_connection_to_port2(username)
 
     def accept_disconnection(self, conn: socket, addr: tuple):
@@ -144,12 +150,12 @@ class Server:
             self.delete_client_data(username, conn)
             message = f"Server closed connection with {username} successfully!"
             logging.info(message)
-            conn.send(OK.encode())
+            send_msg_through_socket(conn, OK)
             conn.close()
         else:
             message = "Error: Trying to disconnect before establishing a \
                 connection"
-            conn.send(message.encode())
+            send_msg_through_socket(conn, message)
     
     def list_users(self, conn: socket, addr: tuple):
         """ Send the requested client the list of currently connected users
@@ -161,7 +167,7 @@ class Server:
         else:
             message = "Error: Trying to access list of users before \
                 establishing a connection"
-        conn.send(message.encode())
+        send_msg_through_socket(conn, message)
 
     def list_files(self, conn: socket, addr: tuple):
         """ Send the requested client the list of files in server's directory
@@ -174,7 +180,7 @@ class Server:
         else:
             message = "Error: Trying to access list of users before \
                 establishing a connection"
-        conn.send(message.encode())
+        send_msg_through_socket(conn, message)
 
     def deliver_message(self, username: str, conn: socket, addr: tuple):
         """ Send the sender client's message to receiver client with username =
@@ -191,29 +197,29 @@ class Server:
             # Don't let the sender to send a message to itself #
             if sender_username == receiver_username:
                 error_msg = "Error: Sending message to yourself is prohibited."
-                sender_conn.send(error_msg.encode())
+                send_msg_through_socket(sender_conn, error_msg)
                 return None
             try:
-                receiver_conn.send(MESSAGE.encode())
+                send_msg_through_socket(receiver_conn, MESSAGE)
                 msg4receiver = f"{len(message)} {message}"
-                receiver_conn.send(msg4receiver.encode())
+                send_msg_through_socket(receiver_conn, msg4receiver)
             except Exception as exc:
                 error_msg = f"Error: Lost connection with {receiver_username}"
-                sender_conn.send(error_msg.encode())
+                send_msg_through_socket(sender_conn, error_msg)
                 self.delete_client_data(receiver_username, receiver_conn)
                 logging.error(error_msg)
             else:
-                sender_conn.send(OK.encode())
+                send_msg_through_socket(sender_conn, OK)
         # If the receiver is not online, send appropriate message to sender #
         elif sender_conn in self.active_connections and receiver_username not \
             in self.clients_port2.keys():
             error_msg = f"Error: {receiver_username} is not online"
-            sender_conn.send(error_msg.encode())
+            send_msg_through_socket(sender_conn, error_msg)
         # In some weird conditions, this may happen #
         elif sender_conn not in self.active_connections:
             error_msg = "Error: Trying to send the message to another user, \
                 before establishing a connection with server"
-            sender_conn.send(error_msg.encode())
+            send_msg_through_socket(sender_conn, error_msg)
 
     def accept_connection_to_port2(self, username: str) -> bool:
         """ Accepts a connection request to `PORT2`, which was sent to \
@@ -240,21 +246,36 @@ class Server:
         # file #              
         if file_name not in directory_items:
             msg = f"Error: {file_name} is not found in server"
-            conn.send(msg.encode())
+            send_msg_through_socket(conn, msg)
             return None
         else:
             msg = OK
-            conn.send(msg.encode())
+            send_msg_through_socket(conn, msg)
         # Send the file using the protocol #
         try:
             with open(os.path.join("server", file_name), "r") as f:
                 file_data = f.read()
                 file_size = len(file_data)
-            conn.send(f"{file_size} {file_data}".encode())
+            send_msg_through_socket(conn, f"{file_size} {file_data}")
         except UnicodeDecodeError:
             file_type = file_name.split(".")[-1]
             error_msg = f"Error: Requested {file_type} file cannot be delivered"
-            conn.send(error_msg.encode())
+            send_msg_through_socket(conn, error_msg)
+        except Exception as exc:
+            send_msg_through_socket(conn, exc.__str__())
+    
+    def receive_and_save_file(self, file_name: str, client_sock: socket):
+        """ Receives the file content from client and saves that file content to
+            server.
+        """
+        try:
+            file_content = receive_whole_data(client_sock, BUF_SIZE)
+            with open(os.path.join("server", file_name), "w") as f:
+                f.write(file_content)
+        except Exception as exc:
+            send_msg_through_socket(client_sock, f"Error: {exc.__str__()}")
+        else:
+            send_msg_through_socket(client_sock, OK)
         
     def write_file(self, file_name: str, conn: socket, addr: tuple):
         """ Writes a new file `file_name`. First checks whether no file with 
@@ -265,36 +286,81 @@ class Server:
                                 if not item.startswith("__")]
         if file_name in directory_items:
             msg = f"Error: File with name {file_name} is already in server"
-            conn.send(msg.encode())
+            send_msg_through_socket(conn, msg)
             return None
         else:
             send_msg_through_socket(conn, OK)
-        try:
-            file_content = receive_whole_data(conn, BUF_SIZE)
-            with open(os.path.join("server", file_name), "w") as f:
-                f.write(file_content)
-        except Exception as exc:
-            send_msg_through_socket(conn, exc.__str__())
-        else:
-            send_msg_through_socket(conn, OK)
+        self.receive_and_save_file(file_name, conn)
 
     def overwrite_file(self, file_name: str, conn: socket, addr: tuple):
         """ Overwrites the `file_name`
         """
-        if file_name.endswith(".py"):
+        directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if file_name in directory_items and file_name.endswith(".py"):
             m = "Error: The requested file cannot be modified"
             send_msg_through_socket(conn, m)
             return None
         else:
             send_msg_through_socket(conn, OK)
-        try:
-            file_content = receive_whole_data(conn, BUF_SIZE)
-            with open(os.path.join("server", file_name), "w") as f:
-                f.write(file_content)
-        except Exception as exc:
-            send_msg_through_socket(conn, f"Error: {exc.__str__()}")
+        self.receive_and_save_file(file_name, conn)
+    
+    def append_file(self, file_name: str, conn: socket, addr: tuple):
+        """ Appends `new_content` to a `file_name`.
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if file_name not in directory_items:
+            error_msg = f"Error: The file {file_name} is not in server"       
+            send_msg_through_socket(conn, error_msg)
+        elif file_name.endswith(".py"):
+            error_msg = f"Error: {file_name} cannot be modified"
+            send_msg_through_socket(conn, error_msg)
         else:
             send_msg_through_socket(conn, OK)
+            new_content = receive_whole_data(conn, BUF_SIZE)
+            try:
+                with open(os.path.join("server", file_name), "a") as f:
+                    f.write(f"{new_content}\n")
+            except Exception as exc:
+                error_msg = f"Error: {exc}"
+                send_msg_through_socket(conn, error_msg)
+            else:
+                send_msg_through_socket(conn, OK)
+
+    def overread_file(self, file_name: str, conn: socket, addr: tuple):
+        """ When the client requests to get server's `file_name`, server sends
+            this file if file exists.
+        """
+        self.read_file(file_name, conn, addr)
+    
+    def appendfile_file(self, client_fname: str, server_fname: str, 
+        conn: socket, addr: tuple):
+        """ Take the contents of `client_fname` and append it to server's 
+            `server_fname`
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "server"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if server_fname not in directory_items:
+            err_m = f"Error: The requested file {server_fname} is not in server"
+            send_msg_through_socket(conn, err_m)
+        elif server_fname.endswith(".py"):
+            error_msg = f"Error: {server_fname} cannot be modified"
+            send_msg_through_socket(conn, error_msg)
+        else:
+            send_msg_through_socket(conn, OK)
+            client_fcontent = receive_whole_data(conn, BUF_SIZE)
+            try:
+                with open(os.path.join("server", server_fname), "a") as f:
+                    f.write(client_fcontent)
+            except Exception as exc:
+                error_msg = f"Error: {exc}"
+                send_msg_through_socket(conn, error_msg)
+            else:
+                send_msg_through_socket(conn, OK)
 
     def start(self):
         """ Starts the server. Server's main job: always waiting connection

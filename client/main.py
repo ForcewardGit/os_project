@@ -1,4 +1,4 @@
-""" Client application's main part.
+""" Client application's main part. This file should be runned to start a server
 """
 
 from .client import Client

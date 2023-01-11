@@ -1,14 +1,14 @@
 """ Module that defines all the logic of the client.
 """
+
 import os
 from threading import Thread, Lock
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
 from .loggers import main_logger, sec_logger
-from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, send_cmd,\
-    read_cmd, write_cmd, send_file_cmd, overwrite_cmd
 from .global_vars import SERVER_IP, MAIN_PORT, RECEIVE_PORT, BUF_SIZE, \
     SERVER_BUF_SIZE, prompt_msg, error_prefix
 from utils import send_msg_through_socket, receive_whole_data, receive_msg
+from .cmd_handlers import *
 
 
 class Client:
@@ -146,6 +146,12 @@ class Client:
                         self.write(*params)
                     case "overwrite":
                         self.overwrite(*params)
+                    case "overread":
+                        self.overread(*params)
+                    case "append":
+                        self.append(*params)
+                    case "appendfile":
+                        self.appendfile(*params)
                     case "whoami":
                         main_logger.info(self.whoami())
                     case "quit":
@@ -166,6 +172,21 @@ class Client:
                 main_logger.error(exc.strerror)
             except ConnectionRefusedError as exc:
                 main_logger.error(f"{exc.strerror}")
+    
+    def connect_to_server(self, ip, port) -> socket | None:
+        """ Create the socket, connect it to the server and return it
+        """
+        try:
+            s = socket(AF_INET, SOCK_STREAM)
+            s.connect((ip, port))
+            return s
+        except ConnectionRefusedError as exc:
+            main_logger.error(f"{exc.strerror}")
+        except gaierror:
+            main_logger.error("Invalid IP address")
+        except TimeoutError as exc:
+            main_logger.error(exc.strerror)
+        return None
 
     def connect_to_port2(self):
         """ Connect `receive_socket` to the server's 2022 port.
@@ -192,21 +213,24 @@ class Client:
             return None
 
         if not self.connected:
-            self.com_socket = connect_cmd(ip, port)
+            self.com_socket = self.connect_to_server(ip, port)
             if self.com_socket:
-                self.com_socket.send(f"CONNECT {username}".encode())
-                message = receive_msg(self.com_socket, BUF_SIZE)
-                if message == "OK":
-                    self.connected = True if self.com_socket else False
-                    self.username = username
-                    self.connect_to_port2()
-                    self.receiving_thread = Thread(
-                        target=self.receive_msg_from_other_users)
-                    self.receiving_thread.start()
-                    info_msg = f"Successfully connected to server with ip={ip}"
-                    main_logger.info(info_msg)
+                if connect_cmd(self.com_socket, username):
+                    message = receive_msg(self.com_socket, BUF_SIZE)
+                    if message == "OK":
+                        self.connected = True if self.com_socket else False
+                        self.username = username
+                        self.connect_to_port2()
+                        self.receiving_thread = Thread(
+                            target=self.receive_msg_from_other_users)
+                        self.receiving_thread.start()
+                        m = f"Successfully connected to server with ip={ip}"
+                        main_logger.info(m)
+                    else:
+                        main_logger.error(message)
                 else:
-                    main_logger.error(message)
+                    self.disconnect_attrs()
+
         elif self.connected:
             main_logger.warning("Already connected")
 
@@ -274,9 +298,15 @@ class Client:
             main_logger.warning("There was no connection")
 
     def read(self, file_name: str):
-        """ Request the server's `file_name` content and print it on terminal. 
+        """ Request the server's `file_name` content and save it. 
         """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
         if self.connected:
+            if file_name in directory_items:
+                main_logger.error(f"{file_name} is already in client")
+                return None
             if read_cmd(self.com_socket, file_name):
                 server_response = receive_msg(self.com_socket, BUF_SIZE)
                 if server_response.startswith(error_prefix):
@@ -291,10 +321,18 @@ class Client:
                         main_logger.error(error_msg)
                     else:
                         file_content = server_response2
-                        main_logger.info(f"Content of {file_name}:")
-                        self.print_file_content(file_content)
+                        try:
+                            with open(os.path.join("client", file_name), "w") \
+                                as f:
+                                f.write(file_content)
+                        except Exception as exc:
+                            main_logger.error(exc)
+                        else:
+                            m = "The file was received successfully!"
+                            main_logger.info(m)
+                        # self.print_file_content(file_content)
             else:
-                self.disconnect_attrs()
+                self.disconnect_attrs(os.path.join(os.getcwd(), "client"))
         else:
             main_logger.warning("There was no connection")
         
@@ -331,7 +369,6 @@ class Client:
                         self.disconnect_attrs()
             else:
                 self.disconnect_attrs()
-
         else:
             main_logger.warning("There was no connection")
     
@@ -366,5 +403,122 @@ class Client:
                             main_logger.info(server_response2)
                     else:
                         self.disconnect_attrs()
+            else:
+                self.disconnect_attrs()
+        else:
+            main_logger.warning("There was no connection")
+    
+    def overread(self, file_name: str):
+        """ Updates `file_name` in client from the one in server.
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if self.connected:
+            if file_name in directory_items and file_name.endswith(".py"):
+                main_logger.error(f"{file_name} cannot be modified")
+                return None
+            if overread_cmd(self.com_socket, file_name):
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    main_logger.info(server_response)
+                    server_response2 = receive_whole_data(
+                        self.com_socket, BUF_SIZE)
+                    if server_response2.startswith(error_prefix):
+                        error_msg = server_response2.removeprefix(error_prefix)
+                        main_logger.error(error_msg)
+                    else:
+                        file_content = server_response2
+                        try:
+                            with open(os.path.join("client", file_name), "w") \
+                                as f:
+                                f.write(file_content)
+                        except Exception as exc:
+                            main_logger.error(exc)
+                        else:
+                            m = "The file was received successfully!"
+                            main_logger.info(m)
+                        # self.print_file_content(file_content)
+            else:
+                self.disconnect_attrs(os.path.join(os.getcwd(), "client"))
+        else:
+            main_logger.warning("There was no connection")
+
+    
+    def append(self, new_content: str, file_name: str):
+        """ Request a server to get the file `file_name` and overwrite that file
+            in the client.
+        """
+        mix_params = file_name.split()
+        file_name = mix_params.pop()
+        new_content += " " if len(mix_params)>0 else ""
+        new_content += " ".join(mix_params)
+        if not (new_content.startswith("\"") and new_content.endswith("\"")):
+            raise ValueError("Message should be written in double quotes!")
+        new_content = new_content.removeprefix("\"").removesuffix("\"")
+
+        if self.connected:
+            if append_cmd(self.com_socket, file_name):
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    main_logger.info(f"Server is ready to update {file_name}")
+                    if send_file_cmd(self.com_socket, new_content, 
+                        len(new_content)):
+                        server_response2 = receive_msg(self.com_socket, BUF_SIZE)
+                        if server_response2.startswith(error_prefix):
+                            err_m = server_response2.removeprefix(error_prefix)
+                            main_logger.error(err_m)
+                        else:
+                            m = f"Finished appending {file_name} in server"
+                            main_logger.info(m)
+                    else:
+                        self.disconnect_attrs()
+            else:
+                self.disconnect_attrs()
+        else:
+            main_logger.warning("There was no connection")
+    
+    def appendfile(self, src_fname: str, dst_fname):
+        """ Get the content of `src_fname` and append to server's `dst_fname`
+        """
+        directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
+        directory_items = [item for item in directory_items 
+                                if not item.startswith("__")]
+        if src_fname in directory_items:
+            with open(os.path.join("client", src_fname), "r") as f:
+                src_content = f.read()
+                src_content_size = len(src_content)
+        if self.connected:
+            if src_fname not in directory_items:
+                m = f"Source file {src_fname} not found in client"
+                main_logger.error(m)
+                return None
+            if appendfile_cmd(self.com_socket, src_fname, dst_fname):
+                server_response = receive_msg(self.com_socket, BUF_SIZE)
+                if server_response.startswith(error_prefix):
+                    error_msg = server_response.removeprefix(error_prefix)
+                    main_logger.error(error_msg)
+                else:
+                    m = f"Server is ready to update {dst_fname}"
+                    main_logger.info(m)
+                    if send_file_cmd(self.com_socket, src_content, 
+                        src_content_size):
+                        server_response2 = receive_msg(self.com_socket, BUF_SIZE)
+                        if server_response2.startswith(error_prefix):
+                            err_m = server_response2.removeprefix(error_prefix)
+                            main_logger.error(err_m)
+                        else:
+                            m = f"Finished appending {src_fname} to {dst_fname}"
+                            main_logger.info(m)
+                    else:
+                        self.disconnect_attrs()
+            else:
+                self.disconnect_attrs()
         else:
             main_logger.warning("There was no connection")
