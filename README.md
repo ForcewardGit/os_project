@@ -30,6 +30,13 @@ All logic of client is in package <i>client</i> of the root project folder. The 
         <li><i>disconnect</i></li>
         <li><i>lu</i></li>
         <li><i>lf</i></li>
+        <li><i>send username "msg"</i></li>
+        <li><i>read file_name</i></li>
+        <li><i>write file_name</i></li>
+        <li><i>overread file_name</i></li>
+        <li><i>overwrite file_name</i></li>
+        <li><i>append "DATA" file_name</i></li>
+        <li><i>appendfile src_file dst_file</i></li>
     </ul>
 </p>
 
