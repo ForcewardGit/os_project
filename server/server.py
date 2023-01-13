@@ -33,8 +33,7 @@ class Server:
         self.clients_port2: dict[str, (tuple, socket)] = {}
         self.active_connections: list[socket] = []
         self.com_socket, self.redirect_socket = self.configure_sockets()
-        self.rfile_lock = Lock()
-        self.wfile_lock = Lock()
+        self.file_lock = Lock()
 
     def configure_sockets(self):
         """ Create and return socket objects. If some error occurred, the method
@@ -107,22 +106,22 @@ class Server:
                     case "MESSAGE":
                         self.deliver_message(*params)
                     case "READ":
-                        with self.rfile_lock:
+                        with self.file_lock:
                             self.read_file(*params)
                     case "WRITE":
-                        with self.wfile_lock:
+                        with self.file_lock:
                             self.write_file(*params)
                     case "OVERWRITE":
-                        with self.wfile_lock:
+                        with self.file_lock:
                             self.overwrite_file(*params)
                     case "OVERREAD":
-                        with self.rfile_lock:
+                        with self.file_lock:
                             self.overread_file(*params)
                     case "APPEND":
-                        with self.wfile_lock:
+                        with self.file_lock:
                             self.append_file(*params)
                     case "APPENDFILE":
-                        with self.wfile_lock:
+                        with self.file_lock:
                             self.appendfile_file(*params)
             except ConnectionResetError as exc:
                 username = self.find_username_from_socket(conn)
