@@ -4,11 +4,14 @@
 import os
 from threading import Thread, Lock
 from socket import socket, AF_INET, SOCK_STREAM, gaierror, timeout
+
+from utils import receive_whole_data, receive_msg
 from .loggers import main_logger, sec_logger
 from .global_vars import SERVER_IP, MAIN_PORT, RECEIVE_PORT, BUF_SIZE, \
     SERVER_BUF_SIZE, prompt_msg, error_prefix
-from utils import send_msg_through_socket, receive_whole_data, receive_msg
-from .cmd_handlers import *
+from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, \
+    send_cmd, read_cmd, write_cmd, send_file_cmd, overwrite_cmd, \
+        overread_cmd, append_cmd, appendfile_cmd
 
 
 class Client:
@@ -446,8 +449,7 @@ class Client:
                 self.disconnect_attrs(os.path.join(os.getcwd(), "client"))
         else:
             main_logger.warning("There was no connection")
-
-    
+ 
     def append(self, new_content: str, file_name: str):
         """ Request a server to get the file `file_name` and overwrite that file
             in the client.

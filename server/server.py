@@ -2,15 +2,16 @@
 """
 
 import os
-from socket import socket, AF_INET, SOCK_STREAM
 import logging
 from threading import Thread, Lock
-from .protocol import CONNECT, LU, LF, MESSAGE, READ
+from socket import socket, AF_INET, SOCK_STREAM, SHUT_RD
+
+from protocol import MESSAGE
 from utils import send_msg_through_socket, receive_whole_data, receive_msg
 
 # Format log messages #
 log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=log_format)
+logging.basicConfig(level=logging.INFO, format=log_format)
 
 # Global Variables #
 SELF_IP = "127.0.0.1"   # IP address of server, by default it is 127.0.0.1
@@ -32,6 +33,8 @@ class Server:
         self.clients_port2: dict[str, (tuple, socket)] = {}
         self.active_connections: list[socket] = []
         self.com_socket, self.redirect_socket = self.configure_sockets()
+        self.rfile_lock = Lock()
+        self.wfile_lock = Lock()
 
     def configure_sockets(self):
         """ Create and return socket objects. If some error occurred, the method
@@ -104,17 +107,23 @@ class Server:
                     case "MESSAGE":
                         self.deliver_message(*params)
                     case "READ":
-                        self.read_file(*params)
+                        with self.rfile_lock:
+                            self.read_file(*params)
                     case "WRITE":
-                        self.write_file(*params)
+                        with self.wfile_lock:
+                            self.write_file(*params)
                     case "OVERWRITE":
-                        self.overwrite_file(*params)
+                        with self.wfile_lock:
+                            self.overwrite_file(*params)
                     case "OVERREAD":
-                        self.overread_file(*params)
+                        with self.rfile_lock:
+                            self.overread_file(*params)
                     case "APPEND":
-                        self.append_file(*params)
+                        with self.wfile_lock:
+                            self.append_file(*params)
                     case "APPENDFILE":
-                        self.appendfile_file(*params)
+                        with self.wfile_lock:
+                            self.appendfile_file(*params)
             except ConnectionResetError as exc:
                 username = self.find_username_from_socket(conn)
                 self.delete_client_data(username, conn)
@@ -139,7 +148,9 @@ class Server:
         elif username in self.clients_port1.keys():
             message = "Error: User with given username already exists!"
         send_msg_through_socket(conn, message)
-        self.accept_connection_to_port2(username)
+        if message == OK:
+            self.accept_connection_to_port2(username)
+        logging.info(f"User {username} is fully connected")
 
     def accept_disconnection(self, conn: socket, addr: tuple):
         """ If client sends `disconnect` command, close connection with that 
@@ -151,6 +162,7 @@ class Server:
             message = f"Server closed connection with {username} successfully!"
             logging.info(message)
             send_msg_through_socket(conn, OK)
+            conn.shutdown(SHUT_RD)
             conn.close()
         else:
             message = "Error: Trying to disconnect before establishing a \
@@ -227,6 +239,7 @@ class Server:
         """
         try:
             # Blocked until client sends connect() #
+            logging.info("Trying to accept a connection to port 2")
             client_conn, client_addr = self.redirect_socket.accept()
             logging.debug("Accepted connection request to port 2")
             self.clients_port2[username] = (client_conn, client_addr)
@@ -243,7 +256,7 @@ class Server:
         directory_items = [item for item in directory_items 
                                 if not item.startswith("__")]
         # Send appropriate msg to client depending on existance of requested 
-        # file #              
+        # file #
         if file_name not in directory_items:
             msg = f"Error: {file_name} is not found in server"
             send_msg_through_socket(conn, msg)

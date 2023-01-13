@@ -1,5 +1,4 @@
-""" Protocols for a client to recognize commands sent from server and take 
-    appropriate actions.
+""" Protocols for client and server to communicate between each other.
 """
 
 CONNECT = "CONNECT"
@@ -10,6 +9,6 @@ MESSAGE = "MESSAGE"
 READ = "READ"
 WRITE = "WRITE"
 OVERWRITE = "OVERWRITE"
-APPEND = "APPEND"
 OVERREAD = "OVERREAD"
+APPEND = "APPEND"
 APPENDFILE = "APPENDFILE"

@@ -1,7 +1,7 @@
 """ Module that defines some global variables for the client application.
 """
 
-SERVER_IP = "localhost"
+SERVER_IP = "127.0.0.1"
 MAIN_PORT = 2021
 RECEIVE_PORT = 2022
 BUF_SIZE = 128

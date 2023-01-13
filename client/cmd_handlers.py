@@ -12,9 +12,9 @@
 """
 
 from socket import socket
-from .protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ, WRITE,\
-    OVERWRITE, OVERREAD, APPEND, APPENDFILE
 from utils import send_msg_through_socket
+from protocol import CONNECT, DISCONNECT, LU, LF, MESSAGE, READ, WRITE,\
+    OVERWRITE, OVERREAD, APPEND, APPENDFILE
 from .loggers import main_logger
 
 
