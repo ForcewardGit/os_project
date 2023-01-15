@@ -1,4 +1,19 @@
-""" Module that configures Logger objects for the client program.
+""" Module configures Logger objects for the client program.
+
+    Module is not intended to be runned!
+    Defines 2 main Logger objects:
+    main_logger : Logger
+        Logger used for logging messages on main thread on client
+    sec_logger : Logger
+        Logger used to log messages on receiving thread on client
+    
+    Used built-in modules
+    ---------------------
+    logging
+
+    Used custom modules
+    -------------------
+    global_vars, logging_formatter
 """
 
 import logging

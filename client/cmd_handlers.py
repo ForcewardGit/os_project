@@ -1,6 +1,8 @@
-""" Module that contains helper functions for the client. The logic of all of 
-    them are similar: send message to server and return something, if message
-    cannot be sent, return some other thing.
+""" Contains functions sending commands to server according to protocol.
+    
+    The logic of all of 
+    them are similar: send message to server and return something, if 
+    message cannot be sent, return some other thing.
 
     PROTOCOL:                         responsible function
     ---------------------------------------------------------
