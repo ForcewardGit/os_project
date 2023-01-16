@@ -1,4 +1,19 @@
-""" Module that defines all the logic of the client.
+""" The module defines all the logic of the TCP client.
+
+    This module is not intended to be runned!
+
+    Used built-in modules
+    ---------------------
+    os, threading, socket
+
+    Used custom modules
+    -------------------
+    utils, loggers, global_vars, cmd_handlers
+
+    Defined class
+    -------------
+    Client
+        Implements the logic of tcp client objects
 """
 
 import os
@@ -15,8 +30,71 @@ from .cmd_handlers import connect_cmd, disconnect_cmd, lu_cmd, lf_cmd, \
 
 
 class Client:
-    """ Client class which implements the logic of client objects. 
+    """ Implements the logic of tcp client objects.
         Call ask_command() method in order to start the client.
+
+        Object attributes
+        -----------------
+        username : str
+            The username of a client
+        connected : boolean
+            Shows whether the client is connected to server at `port1`
+        connected_port2 : boolean
+            Shows whether the client is connected to server at `port2`
+        com_socket : socket
+            Socket object used for communication with server at `port1`
+        receive_socket : socket
+            Socket object used for receiving messages from server, sent 
+            by other clients
+        receiving_thread : Thread
+            The thread which is used for listening at `port2` for any
+            messages sent by other clients
+        
+        Methods
+        -------
+        whoami(self)
+            Shows the username of a client on terminal
+        is_socket_closed(self, s: socket)
+            Checks whether a given `s` socket object is closed
+        check_username(self, username: str)
+            Validates the `username` with some logic
+        disconnect_attrs(self)
+            Resets all necessary client's attributes while disconencting
+        debug_attrs(self)
+            Keeps track of client attributes [for debugging]
+        check_user_input_size(self, user_input: str)
+            Is called when the user types in to the prompt
+        print_file_content(self, file_content: str)
+            Prints given `file_content` in a beautiful way
+        receive_msg_from_other_users(self)
+            Always wait at port 2 for a new message from other users
+        ask_command(self)
+            Always asks the user for input, matches it with appropriate 
+            methods
+        connect_to_server(self, ip: str, port: int)
+            Creates the socket, connects it to the server at `port1`
+        connect_to_port2(self)
+            Connect `receive_socket` to the server's `port2`
+        connect(self, username: str, ip: str)
+            Establishes a full connection with server
+        disconnect(self)
+            Disconnects client from the server
+        lu(self)
+            Lists all users connected to our server
+        lf(self)
+            Lists all the files of our server's folder
+        send(self, username: str, message: str)
+            Sends a `message` to another user with username = `username`
+        read(self, file_name: str)
+            Requests the server's `file_name` content and saves it
+        write(self, file_name: str)
+            Sends the content of `file_name` to server
+        overwrite(self, file_name: str)
+            Transfers the file `file_name` to server
+        append(self, new_content: str, file_name: str)
+            Appends a string to server's file
+        appendfile(self, src_fname: str, dst_fname)
+            Appends the content of client's file to server's file
     """
     def __init__(self) -> None:
         """ Initialization of client object.
@@ -27,23 +105,45 @@ class Client:
         self.com_socket: socket = None
         self.receive_socket: socket = None
         self.receiving_thread: Thread = None
-        self.print_lock = Lock()
-        self.message_received = False
     
     def whoami(self) -> str:
-        """ Returns the username to the user.
+        """ Shows the username of a client on terminal.
+
+            Returns
+            -------
+            str
+                Username of a client.
         """
         return self.username
     
     def is_socket_closed(self, s: socket) -> bool:
+        """ Checks whether a given `s` socket object is closed.
+
+            Returns
+            -------
+            bool
+                True if `s` is closed, False if not
+        """
         try:
             return s.fileno() == -1
         except Exception:
             return False
     
     def check_username(self, username: str) -> str:
-        """ Checks the username, if it's valid, returns itself, if not -> 
-            returns a string representing error message.
+        """ Validates the `username` with some logic.
+
+            Parameters
+            ----------
+            username : str
+                Username of a client which is going to connect to server
+
+            Returns
+            -------
+            str
+                Username, when `username` passed validation
+            str
+                Error message representing which validation the 
+                `username` didn't pass
         """
         if len(username) < 3 or len(username) > 30:
             return "Username must contain at least 3 characters and at most 30"
@@ -52,8 +152,11 @@ class Client:
         return username
             
     def disconnect_attrs(self):
-        """ When connection lost with server by any reason, resets all the 
-            necessary attributes.
+        """ Resets all necessary client's attributes while disconencting.
+            
+            Returns
+            -------
+            None
         """
         if self.connected:
             self.connected = False
@@ -66,7 +169,7 @@ class Client:
         self.username = ""
     
     def debug_attrs(self):
-        """ Method to keep track of client attributes [for debugging].
+        """ Keeps track of client attributes [for debugging].
         """
         try:
             main_logger.debug(f"username: {self.username}")
@@ -79,12 +182,21 @@ class Client:
             pass
     
     def check_user_input_size(self, user_input: str):
+        """ Is called when the user types in to the prompt.
+
+            Raises
+            ------
+            TypeError   
+                When the input size is too much
+        """
         if len(user_input) > SERVER_BUF_SIZE:
             raise TypeError(
                 f"Too long input. Max input size is {SERVER_BUF_SIZE}")
 
     def print_file_content(self, file_content: str):
-        """ Gets the file content and prints it in a beautiful way.
+        """ Prints given `file_content` in a beautiful way.
+
+            [Used for debugging]
         """
         print("-"*80)
         print(file_content)
@@ -92,8 +204,8 @@ class Client:
 
     def receive_msg_from_other_users(self):
         """ Always wait at port 2 for a new message from other users.
-            Technically, we are connecting to server with SERVER_IP waiting at
-            port 2 (RECEIVE_PORT).
+
+            Receives the message content according to protocol.
         """
         # Always wait for a new message #
         while True:
@@ -115,9 +227,12 @@ class Client:
                 break
     
     def ask_command(self):
-        """ Method which is runned automatically when the client object is 
-            created. Always asks the user for input, matches it with appropriate
+        """ Always asks the user for input, matches it with appropriate 
             methods.
+
+            Main method of a client, which should be runned when the 
+            client object is created.
+            The method is terminated only when the `quit` command is received
         """
         while True:
             try:
@@ -175,9 +290,29 @@ class Client:
                 main_logger.error(exc.strerror)
             except ConnectionRefusedError as exc:
                 main_logger.error(f"{exc.strerror}")
+            except KeyboardInterrupt:
+                main_logger.error("KeyboardInterrupt")
+                self.disconnect()
+                break
+            except Exception as exc:
+                main_logger.error(f"{exc}")
     
-    def connect_to_server(self, ip, port) -> socket | None:
-        """ Create the socket, connect it to the server and return it
+    def connect_to_server(self, ip: str, port: int) -> socket | None:
+        """ Creates the socket, connects it to the server at port1.
+
+            Parameters
+            ----------
+            ip : str
+                IP address of a server
+            port : int
+                Port, to which the connetction is to be established
+
+            Returns
+            -------
+            socket
+                Created socket
+            None
+                When some error is raised
         """
         try:
             s = socket(AF_INET, SOCK_STREAM)
@@ -192,7 +327,11 @@ class Client:
         return None
 
     def connect_to_port2(self):
-        """ Connect `receive_socket` to the server's 2022 port.
+        """ Connect `receive_socket` to the server's `port2`.
+
+            Returns
+            -------
+            None
         """
         try:
             self.receive_socket = socket(AF_INET, SOCK_STREAM)
@@ -202,7 +341,17 @@ class Client:
             main_logger.debug(exc)
 
     def connect(self, username: str, ip: str):
-        """ Connect to the server with given `ip` and `port`.
+        """ Establishes a full connection with server.
+
+            Once this method is called, server gets to know the username
+            of a client and can map the socket to client's username
+
+            Parameters
+            ----------
+            username : str
+                The username of a client
+            ip : str
+                IP address of server
         """
         global SERVER_IP        
         ip = "127.0.0.1" if ip == "localhost" else ip
@@ -238,8 +387,11 @@ class Client:
             main_logger.warning("Already connected")
 
     def disconnect(self):
-        """ Disconnect from the server, to which our client is currently
-            connected.
+        """ Disconnects client from the server.
+
+            Returns
+            -------
+            None
         """
         if self.connected:
             disconnect_cmd(self.com_socket)
@@ -253,8 +405,7 @@ class Client:
             main_logger.warning("There was no connection")
 
     def lu(self):
-        """ Print all the users which are currently connected to the server,
-            to which our client is also connected
+        """ Lists all users connected to the server.
         """
         if self.connected:
             if lu_cmd(self.com_socket):
@@ -281,7 +432,18 @@ class Client:
             main_logger.warning("There was no connection")
 
     def send(self, username: str, message: str):
-        """ Send a message to another user with username = `username`
+        """ Sends a `message` to another user with username = `username`
+
+            Parameters
+            ----------
+            username : str
+                The username of a client to whom `message` is to be sent
+            message : str
+                The message which is going to be sent to `username`
+            
+            Returns
+            -------
+            None
         """
         message = message.rstrip()  # Make sure that the user didn't put any unnecessary spaces
         # Check whether `message` parameter is legal #
@@ -301,7 +463,16 @@ class Client:
             main_logger.warning("There was no connection")
 
     def read(self, file_name: str):
-        """ Request the server's `file_name` content and save it. 
+        """ Requests the server's `file_name` content and saves it.
+
+            Parameters
+            ----------
+            file_name : str
+                The name of the server's file which will be transferred
+            
+            Returns
+            -------
+            None
         """
         directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
         directory_items = [item for item in directory_items 
@@ -341,6 +512,15 @@ class Client:
         
     def write(self, file_name: str):
         """ Sends the content of `file_name` to server.
+
+            Parameters
+            ----------
+            file_name : str
+                Name of a local file which will be transerred to server
+            
+            Returns
+            -------
+            None
         """
         directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
         directory_items = [item for item in directory_items 
@@ -376,9 +556,19 @@ class Client:
             main_logger.warning("There was no connection")
     
     def overwrite(self, file_name: str):
-        """ Transfers the file `file_name` to server. If the server already has
-            file `file_name`, that file is updated with the file content sent by
-            client.
+        """ Transfers the file `file_name` to server. 
+        
+            If the server already has file `file_name`, that file is 
+            updated with the file content sent by client.
+
+            Parameters
+            ----------
+            file_name : str
+                Name of client's file and server's file
+            
+            Returns
+            -------
+            None
         """
         directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
         directory_items = [item for item in directory_items 
@@ -399,7 +589,7 @@ class Client:
                     main_logger.info(f"Server is ready to get contents of {file_name}...")
                     if send_file_cmd(self.com_socket, file_data, file_size):
                         server_response2 = receive_msg(self.com_socket, BUF_SIZE)
-                        if server_response.startswith(error_prefix):
+                        if server_response2.startswith(error_prefix):
                             error_msg = server_response2.removeprefix(error_prefix)
                             main_logger.error(error_msg)
                         else:
@@ -413,6 +603,15 @@ class Client:
     
     def overread(self, file_name: str):
         """ Updates `file_name` in client from the one in server.
+
+            Parameters
+            ----------
+            file_name : str
+                The name of file which will be updated
+            
+            Returns
+            -------
+            None
         """
         directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
         directory_items = [item for item in directory_items 
@@ -446,13 +645,23 @@ class Client:
                             main_logger.info(m)
                         # self.print_file_content(file_content)
             else:
-                self.disconnect_attrs(os.path.join(os.getcwd(), "client"))
+                self.disconnect_attrs()
         else:
             main_logger.warning("There was no connection")
  
     def append(self, new_content: str, file_name: str):
-        """ Request a server to get the file `file_name` and overwrite that file
-            in the client.
+        """ Appends a string to server's file.
+
+            Parameters
+            ----------
+            new_content : str
+                Content which will be appended to server's file
+            file_name : str
+                Name of server's file, to which data will be appended
+            
+            Returns
+            -------
+            None
         """
         mix_params = file_name.split()
         file_name = mix_params.pop()
@@ -487,7 +696,18 @@ class Client:
             main_logger.warning("There was no connection")
     
     def appendfile(self, src_fname: str, dst_fname):
-        """ Get the content of `src_fname` and append to server's `dst_fname`
+        """ Appends the content of client's file to server's file
+
+            Parameters
+            ----------
+            src_fname : str
+                Client's file which will be appended to server's file
+            dst_fname : str
+                Server's file which will be appended by client's file
+            
+            Returns
+            -------
+            None
         """
         directory_items = os.listdir(os.path.join(os.getcwd(), "client"))
         directory_items = [item for item in directory_items 
