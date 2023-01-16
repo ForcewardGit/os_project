@@ -290,6 +290,12 @@ class Client:
                 main_logger.error(exc.strerror)
             except ConnectionRefusedError as exc:
                 main_logger.error(f"{exc.strerror}")
+            except KeyboardInterrupt:
+                main_logger.error("KeyboardInterrupt")
+                self.disconnect()
+                break
+            except Exception as exc:
+                main_logger.error(f"{exc}")
     
     def connect_to_server(self, ip: str, port: int) -> socket | None:
         """ Creates the socket, connects it to the server at port1.
