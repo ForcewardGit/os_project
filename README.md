@@ -8,6 +8,7 @@
 <hr><br>
 
 <p style = "color: darkblue; font-size: 25px; font-weight: bold;">How to run client and server</p>
+<p><u>Requirement:</u> python 3.10+</p>
 <p>I recommend you to run the server first. `server` and `client` packages both contain `main.py` file, which we should run to start a server and a client appropriately.</p>
 <b>Start server:</b>
 <ul>

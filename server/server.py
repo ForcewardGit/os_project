@@ -30,10 +30,10 @@ log_format = "%(levelname)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=log_format)
 
 # Global Variables #
-SELF_IP = "172.20.10.4" # IP address of server, by default it is 127.0.0.1
-PORT1 = 2021            # Port at which server waits clients and interacts with them
-PORT2 = 2022            # Port to which server sends messages whenever accepts them in `send` command
-BUF_SIZE = 4096         # Buffer size for receiving items
+SELF_IP = "172.20.10.4"  # IP address of server, by default it is 127.0.0.1
+PORT1 = 2021             # Port at which server waits clients and interacts with them
+PORT2 = 2022             # Port to which server sends messages whenever accepts them in `send` command
+BUF_SIZE = 4096          # Buffer size for receiving items
 OK = "OK"               
 
 
